@@ -1,7 +1,15 @@
 """Versioned event envelope shared by every producer and consumer.
 
 Every event has the same envelope (who/when/where) and a typed payload selected by
-`payload.kind`. Bump SCHEMA_VERSION on any breaking change to a payload.
+`payload.kind`.
+
+Versioning policy (SCHEMA_VERSION = "MAJOR.MINOR"):
+- MINOR bump for additive changes (a new payload kind, a new optional field). Consumers
+  accept any MINOR of a MAJOR they support, so old events keep parsing.
+- MAJOR bump for anything breaking (removing/renaming/retyping a field). Consumers reject
+  unsupported MAJORs into the dead-letter table rather than guessing.
+
+History: 1.0 initial; 1.1 adds `task_run` (Airflow callbacks) and git fields on deploys.
 """
 
 from __future__ import annotations
@@ -11,9 +19,10 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
+SUPPORTED_MAJORS = {"1"}
 
 
 class EventType(StrEnum):
@@ -21,12 +30,16 @@ class EventType(StrEnum):
     JOB_METRIC = "job_metric"
     DQ_RESULT = "dq_result"
     DEPLOY = "deploy_event"
+    TASK_RUN = "task_run"
 
 
-# Kafka topic for each event type (topics are created by redpanda-init).
+# Kafka topic for each event type (topics are created by redpanda-init). Task-run facts
+# from Airflow callbacks share `job_metrics` with job metrics: both describe how an
+# execution went, and the detector reads them together.
 TOPIC_FOR: dict[EventType, str] = {
     EventType.JOB_LOG: "job_logs",
     EventType.JOB_METRIC: "job_metrics",
+    EventType.TASK_RUN: "job_metrics",
     EventType.DQ_RESULT: "dq_results",
     EventType.DEPLOY: "deploy_events",
 }
@@ -95,15 +108,37 @@ class DeployEvent(_Payload):
     changed_files: list[str] = Field(default_factory=list)
     author: str | None = None
     message: str | None = None
+    git_sha: str | None = None  # 1.1
+    dirty: bool | None = None  # 1.1: uncommitted changes were deployed
 
 
-Payload = Annotated[JobLog | JobMetric | DQResult | DeployEvent, Field(discriminator="kind")]
+class TaskRun(_Payload):
+    """One Airflow task attempt finishing, from on_success/on_failure/on_retry callbacks.
+
+    This catches failures that the job's own instrumentation can't see, such as a
+    process killed by the OOM killer, a sensor timeout, or a bad bash command."""
+
+    kind: Literal["task_run"] = "task_run"
+    task_id: str
+    operator: str | None = None
+    state: Literal["success", "failed", "up_for_retry"]
+    try_number: int | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_s: float | None = None
+    hostname: str | None = None
+    exception: str | None = None
+
+
+AnyPayload = JobLog | JobMetric | DQResult | DeployEvent | TaskRun
+Payload = Annotated[AnyPayload, Field(discriminator="kind")]
 
 _KIND_TO_TYPE = {
     "job_log": EventType.JOB_LOG,
     "job_metric": EventType.JOB_METRIC,
     "dq_result": EventType.DQ_RESULT,
     "deploy_event": EventType.DEPLOY,
+    "task_run": EventType.TASK_RUN,
 }
 
 
@@ -111,9 +146,12 @@ class Event(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = SCHEMA_VERSION
-    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    # Required on the wire, no defaults: if a consumer filled these in, a replayed event
+    # would get a new id (or a new emitted date, hence partition) and dedupe would break.
+    # Producers get them from RunContext.event().
+    event_id: str = Field(min_length=1)
     event_type: EventType
-    emitted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    emitted_at: datetime
     pipeline: str
     run_id: str | None = None
     task_id: str | None = None
@@ -126,6 +164,36 @@ class Event(BaseModel):
     def topic(self) -> str:
         return TOPIC_FOR[self.event_type]
 
+    @model_validator(mode="after")
+    def _check_consistency(self) -> Event:
+        major = self.schema_version.split(".", 1)[0]
+        if major not in SUPPORTED_MAJORS:
+            raise ValueError(
+                f"unsupported schema_version {self.schema_version!r} "
+                f"(supported majors: {sorted(SUPPORTED_MAJORS)})"
+            )
+        if _KIND_TO_TYPE[self.payload.kind] != self.event_type:
+            raise ValueError(
+                f"event_type {self.event_type.value!r} does not match payload kind "
+                f"{self.payload.kind!r}"
+            )
+        return self
+
+
+class InvalidEventError(ValueError):
+    """Raised by `parse_event`; the message is what lands in the dead-letter table."""
+
+
+def parse_event(raw: bytes | str) -> Event:
+    """Strictly parse one serialized event (the single gate every consumer uses)."""
+    try:
+        return Event.model_validate_json(raw)
+    except ValidationError as exc:
+        errors = "; ".join(
+            f"{'.'.join(map(str, e['loc'])) or '<root>'}: {e['msg']}" for e in exc.errors()
+        )
+        raise InvalidEventError(errors) from exc
+
 
 class RunContext(BaseModel):
     """Where an event came from. Built from Airflow's AIRFLOW_CTX_* env vars in tasks."""
@@ -137,8 +205,10 @@ class RunContext(BaseModel):
     try_number: int | None = None
     code_version: str = "unknown"
 
-    def event(self, payload: JobLog | JobMetric | DQResult | DeployEvent) -> Event:
+    def event(self, payload: AnyPayload) -> Event:
         return Event(
+            event_id=str(uuid.uuid4()),
+            emitted_at=datetime.now(UTC),
             event_type=_KIND_TO_TYPE[payload.kind],
             payload=payload,
             **self.model_dump(),

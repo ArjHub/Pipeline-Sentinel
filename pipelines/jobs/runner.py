@@ -19,7 +19,7 @@ JobBody = Callable[[SparkSession, str, JobStats], None]
 
 
 def run_spark_job(job_name: str, body: JobBody, argv: list[str] | None = None) -> int:
-    from pipelines.jobs.spark import build_spark
+    from pipelines.jobs.spark import build_spark, spark_info
 
     parser = argparse.ArgumentParser(prog=job_name)
     parser.add_argument("--ds", required=True)
@@ -29,10 +29,14 @@ def run_spark_job(job_name: str, body: JobBody, argv: list[str] | None = None) -
     sink = sink_from_env()
     configure_logging(ctx, sink)
 
-    with instrumented_job(job_name, ctx, sink) as stats:
-        spark = build_spark(job_name)
-        try:
-            body(spark, args.ds, stats)
-        finally:
-            spark.stop()
+    try:
+        with instrumented_job(job_name, ctx, sink) as stats:
+            spark = build_spark(job_name)
+            stats.extra.update(spark_info(spark))
+            try:
+                body(spark, args.ds, stats)
+            finally:
+                spark.stop()
+    finally:
+        sink.flush()
     return 0

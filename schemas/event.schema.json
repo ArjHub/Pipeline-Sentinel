@@ -1,0 +1,658 @@
+{
+  "$defs": {
+    "ColumnSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "nullable": {
+          "default": true,
+          "title": "Nullable",
+          "type": "boolean"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "title": "ColumnSpec",
+      "type": "object"
+    },
+    "DQResult": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "evaluated": {
+          "title": "Evaluated",
+          "type": "integer"
+        },
+        "failed": {
+          "title": "Failed",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "dq_result",
+          "default": "dq_result",
+          "title": "Kind",
+          "type": "string"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/ExpectationOutcome"
+          },
+          "title": "Results",
+          "type": "array"
+        },
+        "row_count": {
+          "title": "Row Count",
+          "type": "integer"
+        },
+        "success": {
+          "title": "Success",
+          "type": "boolean"
+        },
+        "suite_name": {
+          "title": "Suite Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset",
+        "suite_name",
+        "success",
+        "evaluated",
+        "failed",
+        "row_count",
+        "results"
+      ],
+      "title": "DQResult",
+      "type": "object"
+    },
+    "DeployEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Author"
+        },
+        "changed_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Changed Files",
+          "type": "array"
+        },
+        "code_version": {
+          "title": "Code Version",
+          "type": "string"
+        },
+        "component": {
+          "title": "Component",
+          "type": "string"
+        },
+        "dirty": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dirty"
+        },
+        "git_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Git Sha"
+        },
+        "kind": {
+          "const": "deploy_event",
+          "default": "deploy_event",
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "previous_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Version"
+        }
+      },
+      "required": [
+        "component",
+        "code_version"
+      ],
+      "title": "DeployEvent",
+      "type": "object"
+    },
+    "EventType": {
+      "enum": [
+        "job_log",
+        "job_metric",
+        "dq_result",
+        "deploy_event",
+        "task_run"
+      ],
+      "title": "EventType",
+      "type": "string"
+    },
+    "ExpectationOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Column"
+        },
+        "expectation_type": {
+          "title": "Expectation Type",
+          "type": "string"
+        },
+        "observed_value": {
+          "default": null,
+          "title": "Observed Value"
+        },
+        "success": {
+          "title": "Success",
+          "type": "boolean"
+        },
+        "unexpected_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unexpected Count"
+        },
+        "unexpected_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unexpected Percent"
+        }
+      },
+      "required": [
+        "expectation_type",
+        "success"
+      ],
+      "title": "ExpectationOutcome",
+      "type": "object"
+    },
+    "JobLog": {
+      "additionalProperties": false,
+      "properties": {
+        "exc_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exc Type"
+        },
+        "kind": {
+          "const": "job_log",
+          "default": "job_log",
+          "title": "Kind",
+          "type": "string"
+        },
+        "level": {
+          "title": "Level",
+          "type": "string"
+        },
+        "logger": {
+          "title": "Logger",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "traceback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Traceback"
+        }
+      },
+      "required": [
+        "level",
+        "logger",
+        "message"
+      ],
+      "title": "JobLog",
+      "type": "object"
+    },
+    "JobMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_s": {
+          "title": "Duration S",
+          "type": "number"
+        },
+        "error_message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Message"
+        },
+        "error_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Type"
+        },
+        "extra": {
+          "additionalProperties": true,
+          "title": "Extra",
+          "type": "object"
+        },
+        "finished_at": {
+          "format": "date-time",
+          "title": "Finished At",
+          "type": "string"
+        },
+        "input_schema": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ColumnSpec"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Schema"
+        },
+        "job_name": {
+          "title": "Job Name",
+          "type": "string"
+        },
+        "kind": {
+          "const": "job_metric",
+          "default": "job_metric",
+          "title": "Kind",
+          "type": "string"
+        },
+        "output_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Path"
+        },
+        "rows_in": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rows In"
+        },
+        "rows_out": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rows Out"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "success",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_name",
+        "status",
+        "started_at",
+        "finished_at",
+        "duration_s"
+      ],
+      "title": "JobMetric",
+      "type": "object"
+    },
+    "TaskRun": {
+      "additionalProperties": false,
+      "description": "One Airflow task attempt finishing, from on_success/on_failure/on_retry callbacks.\n\nThis catches failures that the job's own instrumentation can't see, such as a\nprocess killed by the OOM killer, a sensor timeout, or a bad bash command.",
+      "properties": {
+        "duration_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration S"
+        },
+        "exception": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exception"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished At"
+        },
+        "hostname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hostname"
+        },
+        "kind": {
+          "const": "task_run",
+          "default": "task_run",
+          "title": "Kind",
+          "type": "string"
+        },
+        "operator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operator"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "state": {
+          "enum": [
+            "success",
+            "failed",
+            "up_for_retry"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "try_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Try Number"
+        }
+      },
+      "required": [
+        "task_id",
+        "state"
+      ],
+      "title": "TaskRun",
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/ArjHub/Pipeline-Sentinel/schemas/event/1.1",
+  "additionalProperties": false,
+  "properties": {
+    "code_version": {
+      "default": "unknown",
+      "title": "Code Version",
+      "type": "string"
+    },
+    "emitted_at": {
+      "format": "date-time",
+      "title": "Emitted At",
+      "type": "string"
+    },
+    "event_id": {
+      "minLength": 1,
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "$ref": "#/$defs/EventType"
+    },
+    "logical_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Logical Date"
+    },
+    "payload": {
+      "discriminator": {
+        "mapping": {
+          "deploy_event": "#/$defs/DeployEvent",
+          "dq_result": "#/$defs/DQResult",
+          "job_log": "#/$defs/JobLog",
+          "job_metric": "#/$defs/JobMetric",
+          "task_run": "#/$defs/TaskRun"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/JobLog"
+        },
+        {
+          "$ref": "#/$defs/JobMetric"
+        },
+        {
+          "$ref": "#/$defs/DQResult"
+        },
+        {
+          "$ref": "#/$defs/DeployEvent"
+        },
+        {
+          "$ref": "#/$defs/TaskRun"
+        }
+      ],
+      "title": "Payload"
+    },
+    "pipeline": {
+      "title": "Pipeline",
+      "type": "string"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "schema_version": {
+      "default": "1.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Id"
+    },
+    "try_number": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Try Number"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "emitted_at",
+    "pipeline",
+    "payload"
+  ],
+  "title": "PipelineSentinel event v1.1",
+  "type": "object"
+}

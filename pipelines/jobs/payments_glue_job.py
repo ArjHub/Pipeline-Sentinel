@@ -15,7 +15,7 @@ from pyspark.sql import functions as F
 
 from pipelines.common.config import curated_path, raw_dir
 from pipelines.jobs.glue_compat import init_job
-from pipelines.jobs.spark import observed_schema, require_columns, write_partition
+from pipelines.jobs.spark import observed_schema, require_columns, spark_info, write_partition
 from sentinel.events import sink_from_env
 from sentinel.instrumentation import (
     JobStats,
@@ -62,16 +62,20 @@ def main(argv: list[str] | None = None) -> int:
     sink = sink_from_env()
     configure_logging(ctx, sink)
 
-    with instrumented_job("payments_glue_job", ctx, sink) as stats:
-        rt = init_job(argv, required=["ds"], optional=["lake_root"])
-        if "lake_root" in rt.args:
-            # Paths are resolved from the env at call time, so this redirects to S3 on Glue.
-            os.environ["SENTINEL_LAKE_ROOT"] = rt.args["lake_root"]
-        try:
-            run(rt.spark, rt.args["ds"], stats)
-            rt.commit()
-        finally:
-            rt.stop()
+    try:
+        with instrumented_job("payments_glue_job", ctx, sink) as stats:
+            rt = init_job(argv, required=["ds"], optional=["lake_root"])
+            stats.extra.update(spark_info(rt.spark))
+            if "lake_root" in rt.args:
+                # Paths are resolved from the env at call time, so this redirects to S3.
+                os.environ["SENTINEL_LAKE_ROOT"] = rt.args["lake_root"]
+            try:
+                run(rt.spark, rt.args["ds"], stats)
+                rt.commit()
+            finally:
+                rt.stop()
+    finally:
+        sink.flush()
     return 0
 
 

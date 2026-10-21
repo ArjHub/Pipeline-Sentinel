@@ -31,8 +31,9 @@ RUN python -m venv /opt/venv/jobs \
     && chmod -R a+rX /opt/venv
 
 USER airflow
-# pytest for DAG-integrity tests, pinned to the version in Airflow's own constraints.
-RUN pip install --no-cache-dir "pytest==8.2.1" \
+# pytest for DAG-integrity tests and confluent-kafka for the task callbacks (Phase 2),
+# both pinned to the versions in Airflow's own constraints.
+RUN pip install --no-cache-dir "pytest==8.2.1" "confluent-kafka==2.13.2" \
     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.11.txt"
 
 COPY --chown=airflow:root pipelines /opt/sentinel/pipelines

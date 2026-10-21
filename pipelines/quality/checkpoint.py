@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import uuid
 from typing import Any, Literal
@@ -75,7 +76,12 @@ class SentinelEventAction(ValidationAction):
         result = to_dq_result(self.dataset, self.row_count, checkpoint_result)
         _RESULTS[self.binding_id] = result
         ctx, sink = _BINDINGS[self.binding_id]
-        sink.emit(ctx.event(result))
+        try:
+            sink.emit(ctx.event(result))
+        except Exception:
+            # Telemetry must never change a validation outcome; the result is still
+            # returned to the caller and logged by the task.
+            logging.getLogger(__name__).warning("failed to emit dq_result", exc_info=True)
         return {"sentinel_event": result.success}
 
 

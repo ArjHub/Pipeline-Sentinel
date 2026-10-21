@@ -52,8 +52,15 @@ def main(argv: list[str] | None = None) -> int:
     sink = sink_from_env()
     configure_logging(ctx, sink)
 
-    df = load(args.dataset, args.ds)
-    result = validate(df, args.dataset, args.ds, ctx, sink)
+    try:
+        return _run(args.dataset, args.ds, ctx, sink)
+    finally:
+        sink.flush()
+
+
+def _run(dataset: str, ds: str, ctx, sink) -> int:
+    df = load(dataset, ds)
+    result = validate(df, dataset, ds, ctx, sink)
     for outcome in result.results:
         if not outcome.success:
             log.error(
@@ -65,8 +72,8 @@ def main(argv: list[str] | None = None) -> int:
             )
     log.info(
         "DQ %s ds=%s rows=%d evaluated=%d failed=%d",
-        args.dataset,
-        args.ds,
+        dataset,
+        ds,
         result.row_count,
         result.evaluated,
         result.failed,

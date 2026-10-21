@@ -29,9 +29,13 @@ x-airflow-common: &airflow-common
     PYTHONPATH: /opt/sentinel:/opt/sentinel/src
     SENTINEL_LAKE_ROOT: /opt/sentinel/data/lake
     SENTINEL_EVENTS_DIR: /opt/sentinel/data/events
-    SENTINEL_EVENT_SINK: file
+    # Journal to JSONL first, then publish to Redpanda (best effort, time-bounded).
+    SENTINEL_EVENT_SINK: kafka
+    SENTINEL_KAFKA_BOOTSTRAP: redpanda:9092
+    SENTINEL_KAFKA_TIMEOUT_MS: "5000"
+    # Per-pipeline code versions written by `make deploy` (sentinel.deploy).
+    SENTINEL_DEPLOY_STATE: /opt/sentinel/data/deploy/state.json
     SENTINEL_SEED: ${SENTINEL_SEED:-42}
-    SENTINEL_CODE_VERSION: ${SENTINEL_CODE_VERSION:-dev}
     SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-1g}
     TQDM_DISABLE: "1"
     # Hadoop's login module needs a user name; arbitrary uids (AIRFLOW_UID) may lack one.
@@ -185,6 +189,32 @@ services:
     mem_limit: 3584m
     restart: unless-stopped
 
+  sentinel-lander:
+    # Same image (it already has delta-rs + confluent-kafka in the jobs venv).
+    image: pipeline-sentinel/airflow:${IMAGE_TAG:-dev}
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+    user: "${AIRFLOW_UID:-50000}:0"
+    entrypoint: ["/opt/venv/jobs/bin/python", "-m", "sentinel.lander"]
+    environment:
+      PYTHONPATH: /opt/sentinel:/opt/sentinel/src
+      SENTINEL_LAKE_ROOT: /opt/sentinel/data/lake
+      SENTINEL_KAFKA_BOOTSTRAP: redpanda:9092
+      METRICS_PORT: "9108"
+    volumes:
+      - ./:/opt/sentinel
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "-o", "/dev/null", "http://localhost:9108/metrics"]
+      interval: 10s
+      retries: 12
+      start_period: 10s
+    mem_limit: 512m
+    restart: unless-stopped
+
   # One-off container for tests and lint (`make test`, `make lint`). Not started by `up`.
   tools:
     <<: *airflow-common
@@ -197,6 +227,13 @@ services:
     environment:
       <<: *airflow-env
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////tmp/airflow-tests.db
+      SENTINEL_EVENT_SINK: none
+      SENTINEL_DEPLOY_STATE: /tmp/sentinel-test/deploy/state.json
+      # e2e tests talk to the running stack over the compose network.
+      AIRFLOW_API_URL: http://airflow-webserver:8080
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-}
+      SENTINEL_E2E_LAKE_ROOT: /opt/sentinel/data/lake
       SENTINEL_LAKE_ROOT: /tmp/sentinel-test/lake
       SENTINEL_EVENTS_DIR: /tmp/sentinel-test/events
 

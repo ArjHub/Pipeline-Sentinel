@@ -13,6 +13,8 @@ from datetime import timedelta
 import pendulum
 from airflow.operators.bash import BashOperator
 
+from sentinel.instrumentation.airflow_callbacks import on_failure, on_retry, on_success
+
 JOBS_PYTHON = os.environ.get("SENTINEL_JOBS_PYTHON", "/opt/venv/jobs/bin/python")
 SPARK_POOL = "spark"
 START_DATE = pendulum.datetime(2026, 1, 1, tz="UTC")
@@ -24,6 +26,10 @@ DEFAULT_ARGS = {
     "retries": int(os.environ.get("SENTINEL_TASK_RETRIES", "0")),
     "retry_delay": timedelta(seconds=30),
     "execution_timeout": timedelta(minutes=20),
+    # Every task attempt publishes a task_run event (Phase 2).
+    "on_success_callback": on_success,
+    "on_failure_callback": on_failure,
+    "on_retry_callback": on_retry,
 }
 
 # Manual/triggered only: `make run-all` and the fault harness pick the logical date,

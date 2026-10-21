@@ -36,6 +36,17 @@ def build_spark(app_name: str) -> SparkSession:
     )
 
 
+def spark_info(spark: SparkSession) -> dict[str, str]:
+    """Runtime facts worth having in a diagnosis (e.g. a version bump after a deploy)."""
+    conf = spark.sparkContext.getConf()
+    return {
+        "spark_version": spark.version,
+        "spark_app_id": spark.sparkContext.applicationId,
+        "spark_master": spark.sparkContext.master,
+        "driver_memory": conf.get("spark.driver.memory", "default"),
+    }
+
+
 def observed_schema(df: DataFrame) -> list[ColumnSpec]:
     return [
         ColumnSpec(name=f.name, type=f.dataType.simpleString(), nullable=f.nullable)

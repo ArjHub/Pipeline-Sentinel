@@ -76,3 +76,19 @@ def test_defaults(dagbag) -> None:
         assert dag.catchup is False
         assert "pipeline-sentinel" in dag.tags
         assert all(t.retries == 0 for t in dag.tasks)
+
+
+def test_every_task_publishes_task_run_events(dagbag) -> None:
+    from sentinel.instrumentation import airflow_callbacks as cb
+
+    for dag in dagbag.dags.values():
+        for task in dag.tasks:
+            assert cb.on_success in _as_list(task.on_success_callback), task.task_id
+            assert cb.on_failure in _as_list(task.on_failure_callback), task.task_id
+            assert cb.on_retry in _as_list(task.on_retry_callback), task.task_id
+
+
+def _as_list(callbacks) -> list:
+    if callbacks is None:
+        return []
+    return list(callbacks) if isinstance(callbacks, list | tuple) else [callbacks]

@@ -4,14 +4,18 @@ JOBS_PY := /opt/venv/jobs/bin/python
 
 # Yesterday in UTC: the default business date for run-all / query.
 DATE ?= $(shell python3 -c 'from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=1)).date())')
-SENTINEL_CODE_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
+GIT_DIRTY := $(shell git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+GIT_AUTHOR := $(shell git log -1 --format=%an 2>/dev/null | tr -cd '[:alnum:] ._-')
+GIT_MSG := $(shell git log -1 --format=%s 2>/dev/null | tr -cd '[:alnum:] ._:,()-')
 
 # Load .env (credentials for host-side scripts) and export everything to recipes.
 -include .env
 export
 
 .DEFAULT_GOAL := help
-.PHONY: help env build up down clean ps logs run-all query test test-unit test-dags lint fmt lock mem mem-profile
+.PHONY: help env build up down clean ps logs deploy run-all query query-bronze replay-events land \
+	schemas test test-unit test-dags test-e2e lint fmt lock mem mem-profile
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +29,7 @@ build: env ## Build the Airflow+Spark image
 up: env ## Start the stack and wait until healthy
 	$(COMPOSE) up -d --build
 	@bash scripts/wait_healthy.sh 300
+	@$(MAKE) --no-print-directory deploy
 	@echo "Airflow   http://localhost:8080  (user: $${AIRFLOW_ADMIN_USER:-see .env}, password in .env)"
 	@echo "Grafana   http://localhost:3000  (admin / GRAFANA_ADMIN_PASSWORD in .env)"
 	@echo "Prometheus http://localhost:9090"
@@ -42,11 +47,24 @@ ps: ## Show service status
 logs: ## Tail scheduler logs
 	$(COMPOSE) logs -f --tail=100 airflow-scheduler
 
-run-all: ## Run all 4 DAGs for DATE (default: yesterday UTC) and wait
+deploy: ## Record current pipeline code versions; emit deploy_events for what changed
+	@$(COMPOSE) exec -T airflow-scheduler $(JOBS_PY) -m sentinel.deploy \
+	  --git-sha $(GIT_SHA) --dirty $(GIT_DIRTY) --author "$(GIT_AUTHOR)" --message "$(GIT_MSG)"
+
+run-all: deploy ## Run all 4 DAGs for DATE (default: yesterday UTC) and wait
 	python3 scripts/run_all.py --date $(DATE)
 
 query: ## Show curated tables + emitted events for DATE
 	$(COMPOSE) exec airflow-scheduler $(JOBS_PY) scripts/query_lake.py --ds $(DATE)
+
+query-bronze: ## Bronze row counts + sample rows for DATE (business date)
+	$(COMPOSE) exec airflow-scheduler $(JOBS_PY) scripts/query_bronze.py --ds $(DATE)
+
+replay-events: ## Re-publish the JSONL journal to Redpanda (DAY=<emitted date> to limit)
+	$(COMPOSE) exec airflow-scheduler $(JOBS_PY) -m sentinel.events.replay $(if $(DAY),--date $(DAY))
+
+schemas: ## Regenerate schemas/event.schema.json from the Pydantic models
+	$(COMPOSE) run --rm tools "$(JOBS_PY) -m sentinel.events.schema"
 
 test: test-unit test-dags ## Run all unit + DAG tests in a container
 
@@ -56,6 +74,9 @@ test-unit: ## Unit tests (generators, jobs on local Spark, GX suites, events)
 test-dags: ## DAG integrity tests with Airflow's own interpreter
 	$(COMPOSE) run --rm tools "python -m pytest tests/dags -q -p no:cacheprovider"
 
+test-e2e: ## End-to-end: run a DAG on the live stack, assert its events land in bronze
+	$(COMPOSE) run --rm tools "$(JOBS_PY) -m pytest tests/integration -q -p no:cacheprovider"
+
 lint: ## ruff lint + format check
 	$(COMPOSE) run --rm tools "$(JOBS_PY) -m ruff check . && $(JOBS_PY) -m ruff format --check ."
 
@@ -63,7 +84,7 @@ fmt: ## Auto-format with ruff
 	$(COMPOSE) run --rm tools "$(JOBS_PY) -m ruff check --fix . && $(JOBS_PY) -m ruff format ."
 
 lock: ## Re-compile hashed lockfiles (uv, pinned) inside the base image
-	docker run --rm --user root -v "$$PWD/requirements:/req" -w /req --entrypoint bash \
+	docker run --rm -v "$$PWD/requirements:/req" -w /req --entrypoint bash \
 	  apache/airflow:2.11.2-python3.11 -c "pip install -q uv==0.9.5 && \
 	  python -m uv pip compile jobs.in --python-version 3.11 --python-platform linux --generate-hashes --no-header -o jobs.lock.txt && \
 	  python -m uv pip compile dev.in --python-version 3.11 --python-platform linux --generate-hashes --no-header -o dev.lock.txt"

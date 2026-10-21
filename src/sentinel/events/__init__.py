@@ -6,9 +6,12 @@ from sentinel.events.models import (
     Event,
     EventType,
     ExpectationOutcome,
+    InvalidEventError,
     JobLog,
     JobMetric,
     RunContext,
+    TaskRun,
+    parse_event,
 )
 from sentinel.events.sinks import EventSink, JsonlFileSink, MemorySink, NullSink, sink_from_env
 
@@ -21,11 +24,14 @@ __all__ = [
     "EventSink",
     "EventType",
     "ExpectationOutcome",
+    "InvalidEventError",
     "JobLog",
     "JobMetric",
     "JsonlFileSink",
     "MemorySink",
     "NullSink",
     "RunContext",
+    "TaskRun",
+    "parse_event",
     "sink_from_env",
 ]

@@ -1,7 +1,7 @@
 # Architecture
 
-Target architecture across all six phases. Phase 1 implements the "Pipelines" box, the
-event schema and the JSONL event sink.
+Target architecture across all six phases. Phases 1–2 implement everything up to and
+including the bronze tables.
 
 ```mermaid
 flowchart LR
@@ -54,3 +54,10 @@ flowchart LR
 | 13 | Redpanda instead of Kafka + KRaft | Kafka-API compatible, single binary, about 240 MiB RSS measured | Not byte-for-byte Kafka; the client code is identical |
 | 14 | Spark 3.5.4 / Delta 3.3.0 / Python 3.11 | Mirrors AWS Glue 5.0, so the local job and the Glue job match | Not the newest Spark (4.x) |
 | 15 | `customers` is SCD1 (current state); its freshness check has no upper bound | Backfilling an older ds after a newer load is legitimate (found by running a Saturday after a Tuesday) | `daily_revenue` for a backfilled ds joins *current* customer attributes, not point-in-time ones. SCD2 would fix this; out of scope |
+| 16 | Four topics split by *kind of signal* (logs, metrics, DQ, deploys), not by pipeline | Each detector reads one or two kinds across all pipelines; retention and volume differ by kind (logs are the noisiest); adding a pipeline needs no new topic | Per-pipeline isolation comes from the message key (`pipeline`), which also keeps one pipeline's events ordered within a partition |
+| 17 | `task_run` shares `job_metrics` instead of having a fifth topic | Both describe "how an execution went", and the detector joins them | A consumer must branch on `event_type` (the bronze table has it as a column) |
+| 18 | Idempotency key = producer-assigned `event_id` (UUID), required on the wire | The id is fixed when the event is created, so every re-delivery or replay carries the same id. Kafka offsets aren't stable across a replay, so they can't be the key | MERGE costs a scan of the target partition per batch (pruned by `event_date`); fine at this volume, compact or OPTIMIZE at scale |
+| 19 | Journal-first `TeeSink` (JSONL always, Kafka best-effort) | The broker can't fail a pipeline, and nothing is lost; replay needs no "what was delivered?" bookkeeping because the lander dedupes | Events exist twice locally; a dead broker slows runs (5 s flush bound per process). A circuit breaker could skip publishing after the first timeout |
+| 20 | Commit Kafka offsets only after the Delta write; crash on write failure | At-least-once delivery + idempotent MERGE = each event lands exactly once | A poison *write* (not a poison message; those go to dead-letter) would crash-loop the lander, which is visible, not silent |
+| 21 | Bronze partitioned by emitted date, queried by `logical_date` | Emitted date is when something *happened* (retention, time-range scans); ds is the business date the run was for, and a backfill emits today for an old ds | Two dates to keep straight; `make query-bronze` filters on ds |
+| 22 | Code version = content hash of each pipeline's files, recorded by `make deploy` | Uncommitted edits (Phase 5 "bad deploy" faults) are versioned too; a shared-module change correctly redeploys every pipeline | Deploys are explicit (`make deploy`), not inferred from Airflow; on AWS this would run in CI/CD |

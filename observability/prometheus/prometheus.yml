@@ -16,4 +16,8 @@ scrape_configs:
     static_configs:
       - targets: ["redpanda:9644"]
 
-  # Sentinel services (lander, detector, agent, slack api) are added in Phases 2-4.
+  - job_name: sentinel-lander
+    static_configs:
+      - targets: ["sentinel-lander:9108"]
+
+  # Detector, agent and Slack API are added in Phases 3-4.

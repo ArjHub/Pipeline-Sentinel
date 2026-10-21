@@ -13,3 +13,7 @@ pandas==2.2.3
 numpy==1.26.4
 pyarrow==17.0.0
 pydantic==2.11.7
+# Event stream (Phase 2). Same versions as Airflow 2.11.2's constraints, so the Airflow
+# env (callbacks) and this venv use an identical Kafka client.
+confluent-kafka==2.13.2
+prometheus-client==0.24.1

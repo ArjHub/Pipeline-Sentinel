@@ -36,13 +36,16 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging(ctx, sink)
 
     fn, fmt = GENERATORS[args.dataset]
-    with instrumented_job(f"generate_{args.dataset}", ctx, sink) as stats:
-        df = fn(parse_ds(args.ds), base_seed())
-        path = write_atomic(df, raw_dir(args.dataset, args.ds) / f"part-0000.{fmt}", fmt)
-        stats.rows_out = len(df)
-        stats.output_path = str(path)
-        stats.extra["arrived_at"] = datetime.now(UTC).isoformat()
-        log.info("wrote %d %s rows to %s", len(df), args.dataset, path)
+    try:
+        with instrumented_job(f"generate_{args.dataset}", ctx, sink) as stats:
+            df = fn(parse_ds(args.ds), base_seed())
+            path = write_atomic(df, raw_dir(args.dataset, args.ds) / f"part-0000.{fmt}", fmt)
+            stats.rows_out = len(df)
+            stats.output_path = str(path)
+            stats.extra["arrived_at"] = datetime.now(UTC).isoformat()
+            log.info("wrote %d %s rows to %s", len(df), args.dataset, path)
+    finally:
+        sink.flush()
     return 0
 
 

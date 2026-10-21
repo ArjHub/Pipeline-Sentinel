@@ -13,13 +13,13 @@ A self-diagnosing data pipeline platform. It monitors batch pipelines, detects f
 and data drift, and uses an LLM to explain the likely root cause and suggest a fix. A
 human then approves any retry from Slack.
 
-> **Status: Phase 1 of 6 (pipelines to monitor).** Each phase lands as its own commit.
+> **Status: Phase 2 of 6 (event stream).** Each phase lands as its own commit and tag.
 > Sections marked *(Phase N)* describe work that hasn't been built yet.
 
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Pipelines to monitor: 4 DAGs, Spark + Glue-shim jobs, GX suites, structured events | ✅ done |
-| 2 | Event stream: Kafka (Redpanda) producers, Delta bronze lander | ⏳ |
+| 2 | Event stream: Redpanda producers, Delta bronze lander, deploy events, replay | ✅ done |
 | 3 | Detection: failed jobs, schema drift, late data, volume anomalies, suppression | ⏳ |
 | 4 | Diagnosis agent (Claude, tool use) + Slack Block Kit + FastAPI retry endpoint | ⏳ |
 | 5 | Benchmark: 30 labelled faults, accuracy/latency/cost, manual baseline | ⏳ |
@@ -39,7 +39,7 @@ Nothing here comes from any employer, client, or real person. Emails look like
 | PySpark 3.5.4 + Delta Lake 3.3.0 jobs | **Real** | Local mode inside the Airflow container |
 | `payments_etl` Glue job | **Real PySpark, Glue APIs shimmed** | `glue_compat` runs the same script without `awsglue`. DynamicFrames, bookmarks and the Glue catalog are *not* exercised locally (LocalStack Glue is a paid feature) |
 | Great Expectations 1.24 suites | **Real** | |
-| Kafka API (Redpanda v26) | **Real** | Topics created; producers arrive in Phase 2 |
+| Kafka API (Redpanda v26) | **Real** | Jobs, Airflow callbacks, GX and the deploy recorder publish; the lander consumes into Delta bronze |
 | Prometheus + Grafana + statsd-exporter | **Real** | Airflow metrics scraped; dashboard comes in Phase 6 |
 | Claude diagnosis agent *(Phase 4)* | **Real API** if `ANTHROPIC_API_KEY` is set; a fake LLM in tests | Hard budget cap, enforced by a cost ledger |
 | Slack *(Phase 4)* | **Mocked**: local mock-Slack page + signed requests to the real FastAPI handler | A real-Slack setup guide will be provided; not tested against real Slack |
@@ -54,7 +54,9 @@ for small host-side scripts), and git.
 make up        # creates .env with random secrets, builds the image, starts the stack, waits for health
 make run-all   # runs all 4 DAGs for yesterday (UTC) and waits; exit 0 only if all succeed
 make query     # row counts in the curated Delta tables + events emitted for that date
-make test      # unit tests (incl. local Spark + GX) and DAG-integrity tests, in a container
+make query-bronze  # bronze event tables (row counts + samples) for that date
+make test      # unit tests (incl. local Spark + GX + Delta) and DAG-integrity tests, in a container
+make test-e2e  # end-to-end: trigger a DAG on the live stack, assert its events land in bronze
 make down      # stop (keeps data);  `make clean` also deletes volumes and the lake
 ```
 
@@ -154,6 +156,60 @@ ingest_orders → Clear**, with "Downstream" on and "Upstream" off.
    ```
    `ingest_orders` and `validate_orders` go green again.
 
+## The event stream (Phase 2)
+
+```mermaid
+flowchart LR
+  subgraph producers [Producers]
+    J[Spark / Glue / generator jobs<br/>instrumented_job + JSON logs]
+    C[Airflow task callbacks<br/>success / failure / retry]
+    G[GX checkpoint action]
+    D[make deploy<br/>content-hash per pipeline]
+  end
+  producers --> S{TeeSink}
+  S -- "1: always" --> JL[(JSONL journal<br/>data/events/topic/date.jsonl)]
+  S -- "2: best effort, 5 s bound" --> RP[[Redpanda<br/>job_logs, job_metrics,<br/>dq_results, deploy_events]]
+  JL -. make replay-events .-> RP
+  RP --> L[sentinel-lander<br/>validate, MERGE on event_id]
+  L --> B[(Delta bronze, one table per topic,<br/>partitioned by event_date)]
+  L --> DL[(bronze/_dead_letter<br/>raw message + error)]
+```
+
+| Topic | Event types | Produced by |
+|---|---|---|
+| `job_logs` | `job_log` | Every job's structured logs (INFO+), plus an ERROR log with the **task log tail** from the Airflow failure callback |
+| `job_metrics` | `job_metric`, `task_run` | `job_metric`: the job wrapper (status, duration, rows, observed input schema, Spark version). `task_run`: Airflow callbacks for every task attempt, which also covers OOM kills and sensor timeouts where the job can't report itself |
+| `dq_results` | `dq_result` | The GX checkpoint action (every expectation outcome) |
+| `deploy_events` | `deploy_event` | `make deploy`: per pipeline, the code version, previous version, changed files, git SHA and a dirty flag |
+
+**Contract.** `src/sentinel/events/models.py` (Pydantic), exported to
+[`schemas/event.schema.json`](schemas/event.schema.json); a test fails if the two drift.
+Every event has `schema_version`, `event_id`, `event_type`, `pipeline`, `run_id`,
+`task_id`, `logical_date`, `try_number`, `code_version`, `emitted_at` and a typed
+`payload`. A MINOR version bump is additive, and consumers accept any MINOR of a
+supported MAJOR. An unsupported MAJOR goes to dead-letter.
+
+**Code versions.** `make deploy` (run automatically by `make up` and `make run-all`)
+hashes each pipeline's files, which are its DAG and job modules plus the shared modules.
+It emits a `deploy_event` only for pipelines whose content changed. Every later event
+from that pipeline carries the new `code_version`, for example `a98cec4` or
+`a98cec4-dirty.d2857617` for an uncommitted edit.
+
+**When Redpanda is down.** This was measured with `docker compose stop redpanda` followed
+by `make run-all DATE=2026-10-19`. All 4 DAGs still succeeded, and all 58 events were in
+the journal. Each task log said `N event(s) not delivered to Kafka ... run make
+replay-events`. The run took **152 s instead of ~70 s**, because every job process waits
+up to `SENTINEL_KAFKA_TIMEOUT_MS` (5 s) when it flushes. After `docker compose start
+redpanda && make replay-events`, bronze had exactly those 58 rows. Replaying again
+inserted 0 rows and counted 276 as duplicates.
+
+```bash
+make query-bronze DATE=2026-10-20     # bronze counts + samples (filtered by business date)
+make replay-events [DAY=2026-10-21]   # journal -> Redpanda (DAY = emitted date; default all)
+make deploy                           # record code versions now
+docker compose logs -f sentinel-lander
+```
+
 ## Measured resource use (Phase 1)
 
 Measured with `make mem-profile` (samples `docker stats` every 2 s during `make run-all`)
@@ -169,6 +225,7 @@ on an Apple Silicon MacBook (16 GB) with Docker Desktop set to 8 GB:
 | postgres | 94 | 96 |
 | statsd-exporter | 17 | 25 |
 | **Total** | **2,499** | **4,190** |
+| *sentinel-lander (Phase 2, idle)* | *357* | |
 
 A full `run-all` takes about 65–75 s. Each Spark job runs 7–14 s, mostly JVM start-up.
 
@@ -207,11 +264,13 @@ A full `run-all` takes about 65–75 s. Each Spark job runs 7–14 s, mostly JVM
 
 ```
 pipelines/   dags/ jobs/ generators/ quality/ common/   # the pipelines being monitored
-src/sentinel/ events/ instrumentation/ airflow_client.py # the platform (grows each phase)
+src/sentinel/ events/ (models, sinks, replay, schema) instrumentation/ (job wrapper, logging,
+             airflow_callbacks) lander/ (bronze writer, consume loop) deploy.py airflow_client.py
+schemas/     event.schema.json                          # generated contract (make schemas)
 docker/      airflow/Dockerfile
 observability/ prometheus/ statsd/ grafana/
-scripts/     run_all.py query_lake.py init_env.sh wait_healthy.sh mem_profile.sh create_topics.sh
-tests/       unit/ dags/
+scripts/     run_all.py query_lake.py query_bronze.py init_env.sh wait_healthy.sh mem_profile.sh create_topics.sh
+tests/       unit/ dags/ integration/
 docs/        architecture.md
 ```
 
