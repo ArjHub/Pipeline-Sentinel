@@ -60,6 +60,13 @@ def test_stale_partition_breaches_freshness(clean_lake) -> None:
     assert _failed(result) == {("expect_column_max_to_be_between", "order_ts")}
 
 
+def test_stale_payments_breach_freshness(clean_lake) -> None:
+    df = load("payments", CLEAN_DS)
+    df = df[df["paid_ts"] < pd.Timestamp(f"{CLEAN_DS}T12:00:00Z")]  # nothing after noon
+    result, _ = _validate(df, "payments")
+    assert _failed(result) == {("expect_column_max_to_be_between", "paid_ts")}
+
+
 def test_added_column_is_schema_drift(clean_lake) -> None:
     df = _orders(clean_lake).assign(discount_code="X")
     result, _ = _validate(df, "orders")

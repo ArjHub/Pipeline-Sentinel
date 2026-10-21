@@ -23,10 +23,12 @@ def main() -> None:
 
     print(f"lake: {lake_root()}  ds={args.ds}\n")
     print(f"{'table':<16}{'version':>8}{'rows(ds)':>10}")
+    empty = []
     for name in DATASETS:
         path = curated_path(name)
         if not (path / "_delta_log").exists():
-            print(f"{name:<16}{'-':>8}{'missing':>10}")
+            print(f"{name:<16}{'-':>8}{'no table':>10}")
+            empty.append(name)
             continue
         table = DeltaTable(str(path))
         if "ds" in table.metadata().partition_columns:
@@ -34,6 +36,13 @@ def main() -> None:
         else:
             rows = table.to_pandas().shape[0]
         print(f"{name:<16}{table.version():>8}{rows:>10}")
+        if rows == 0:
+            empty.append(name)
+    if empty:
+        print(
+            f"\nNo data for ds={args.ds} in: {', '.join(empty)}."
+            f"\nRun `make run-all DATE={args.ds}` first."
+        )
 
     events_dir = Path(os.environ.get("SENTINEL_EVENTS_DIR", "data/events"))
     counts: Counter[tuple[str, str]] = Counter()

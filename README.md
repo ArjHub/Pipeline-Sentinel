@@ -5,6 +5,7 @@
 ![Spark 3.5.4](https://img.shields.io/badge/spark-3.5.4-e25a1c)
 ![Delta 3.3.0](https://img.shields.io/badge/delta-3.3.0-00add4)
 ![Great Expectations 1.24](https://img.shields.io/badge/great__expectations-1.24-ff6310)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 <!-- CI badge is added in Phase 6, once .github/workflows/ci.yml exists:
 [![CI](https://github.com/ArjHub/Pipeline-Sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/ArjHub/Pipeline-Sentinel/actions/workflows/ci.yml) -->
 
@@ -114,6 +115,45 @@ interface.
 old `ds` therefore joins *today's* customer attributes, such as country. A point-in-time
 join would need SCD2.
 
+## Break it on purpose
+
+The failure demo that Phases 3–5 build on (detection, diagnosis, the retry button). It
+removes the `amount` column from one day's raw orders file, so the Spark job fails with
+a schema error.
+
+```bash
+make run-all DATE=2026-10-20                       # start from a green run
+F=data/lake/raw/orders/ds=2026-10-20/part-0000.csv
+cp "$F" data/orders-backup.csv                     # 1. back up (data/ is git-ignored)
+cut -d, -f1-3,5- data/orders-backup.csv > "$F"     # 2. drop column 4 (amount)
+head -1 "$F"                                       #    order_id,customer_id,order_ts,currency,status
+
+# 3. Re-run ONLY ingest_orders (+ downstream). Don't clear generate_orders: it would
+#    regenerate a correct file and "fix" the fault.
+docker compose exec airflow-scheduler \
+  airflow tasks clear orders_ingest -t '^ingest_orders$' -s 2026-10-20 -e 2026-10-20 -d -y
+```
+
+The UI equivalent of step 3: **DAGs → orders_ingest → run `run_all__2026-10-20` →
+ingest_orders → Clear**, with "Downstream" on and "Upstream" off.
+
+4. **Read the log.** Open **ingest_orders → Logs** in the Airflow UI (or look at the
+   newest file under `/opt/airflow/logs/dag_id=orders_ingest/run_id=run_all__2026-10-20/task_id=ingest_orders/`).
+   The task is `failed` and the log contains:
+   ```
+   SchemaMismatchError: orders: missing required columns ['amount']; observed columns ['order_id', 'customer_id', 'order_ts', 'currency', 'status']
+   ```
+   A `job_metric` event with `status=failed` and `error_type=SchemaMismatchError` is
+   also written to `data/events/job_metrics/`.
+
+5. **Restore and re-run:**
+   ```bash
+   mv data/orders-backup.csv "$F"
+   docker compose exec airflow-scheduler \
+     airflow tasks clear orders_ingest -t '^ingest_orders$' -s 2026-10-20 -e 2026-10-20 -d -y
+   ```
+   `ingest_orders` and `validate_orders` go green again.
+
 ## Measured resource use (Phase 1)
 
 Measured with `make mem-profile` (samples `docker stats` every 2 s during `make run-all`)
@@ -177,3 +217,7 @@ docs/        architecture.md
 
 See [docs/architecture.md](docs/architecture.md) for the full target architecture and
 design decisions.
+
+## License
+
+[MIT](LICENSE) © 2026 Arjun P
