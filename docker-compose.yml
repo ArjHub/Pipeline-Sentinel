@@ -1,0 +1,208 @@
+# PipelineSentinel local stack. Sized for an 8 GB Docker Desktop allocation.
+# All images are pinned by tag AND digest so a fresh clone pulls identical bits.
+# Secrets come from .env (created by `make env` from .env.example).
+
+x-airflow-common: &airflow-common
+  image: pipeline-sentinel/airflow:${IMAGE_TAG:-dev}
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${POSTGRES_PASSWORD:?set in .env}@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?set in .env}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?set in .env}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/sentinel/pipelines/dags
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+    AIRFLOW__CORE__PARALLELISM: "4"
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "True"
+    AIRFLOW__WEBSERVER__WORKERS: "2"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+    AIRFLOW__METRICS__STATSD_ON: "True"
+    AIRFLOW__METRICS__STATSD_HOST: statsd-exporter
+    AIRFLOW__METRICS__STATSD_PORT: "9125"
+    AIRFLOW__METRICS__STATSD_PREFIX: airflow
+    PYTHONPATH: /opt/sentinel:/opt/sentinel/src
+    SENTINEL_LAKE_ROOT: /opt/sentinel/data/lake
+    SENTINEL_EVENTS_DIR: /opt/sentinel/data/events
+    SENTINEL_EVENT_SINK: file
+    SENTINEL_SEED: ${SENTINEL_SEED:-42}
+    SENTINEL_CODE_VERSION: ${SENTINEL_CODE_VERSION:-dev}
+    SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-1g}
+    TQDM_DISABLE: "1"
+    # Hadoop's login module needs a user name; arbitrary uids (AIRFLOW_UID) may lack one.
+    HADOOP_USER_NAME: airflow
+  volumes:
+    - ./:/opt/sentinel
+    - airflow-logs:/opt/airflow/logs
+  depends_on: &airflow-depends
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16.15-bookworm@sha256:d81f7b51697014367236d07ec58b54153fc28f828b72bf247fe5c7487520bcb0
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    mem_limit: 512m
+    restart: unless-stopped
+
+  redpanda:
+    # Kafka-API compatible, single binary, far lighter than Kafka + KRaft on a laptop.
+    image: redpandadata/redpanda:v26.2.5@sha256:badca2d958f81da675c3055a9ecb6ebb590325582bcf16936148ffd65e96e920
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --node-id=0
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --rpc-addr=redpanda:33145
+      - --advertise-rpc-addr=redpanda:33145
+    ports:
+      - "127.0.0.1:19092:19092"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 5s
+      retries: 20
+    mem_limit: 1g
+    restart: unless-stopped
+
+  redpanda-init:
+    image: redpandadata/redpanda:v26.2.5@sha256:badca2d958f81da675c3055a9ecb6ebb590325582bcf16936148ffd65e96e920
+    entrypoint: ["bash", "/opt/sentinel/scripts/create_topics.sh"]
+    environment:
+      RPK_BROKERS: redpanda:9092
+    volumes:
+      - ./scripts:/opt/sentinel/scripts:ro
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: "no"
+
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.29.0@sha256:632f705804922d50c1c95ba8ff9c8c0cc18d4bbb0cc265dc4f9ae708271c95b3
+    command: ["--statsd.mapping-config=/etc/statsd/mapping.yml"]
+    volumes:
+      - ./observability/statsd/mapping.yml:/etc/statsd/mapping.yml:ro
+    mem_limit: 64m
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.13.4@sha256:87861b8cf91579109319ebc300f3f1060e6da9c05d6ae8ad15a20c879e84e32e
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    mem_limit: 256m
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.0.11@sha256:2abd2114bb65e4d6f0614206b7c882c1e7c6a992827ba08396aa5afc23ca07f5
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    mem_limit: 256m
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    # The official entrypoint migrates the DB and creates the admin user idempotently.
+    command: ["bash", "-c", "airflow pools set spark 2 'Spark local-mode slots (memory bound)'"]
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:?set in .env}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set in .env}
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      <<: *airflow-depends
+      airflow-init:
+        condition: service_completed_successfully
+    # Measured ~1.35 GB idle with 2 gunicorn workers; worker refreshes briefly add one more.
+    mem_limit: 2g
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    # LocalExecutor: tasks (including local-mode Spark JVMs) run inside this container,
+    # so it gets the biggest memory share. The `spark` pool caps concurrent JVMs at 2.
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "http://localhost:8974/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      <<: *airflow-depends
+      airflow-init:
+        condition: service_completed_successfully
+    mem_limit: 3584m
+    restart: unless-stopped
+
+  # One-off container for tests and lint (`make test`, `make lint`). Not started by `up`.
+  tools:
+    <<: *airflow-common
+    profiles: ["tools"]
+    # Go through the image entrypoint: it adds a passwd entry for arbitrary uids, which
+    # Spark/Hadoop's login module requires.
+    entrypoint: ["/usr/bin/dumb-init", "--", "/entrypoint", "bash", "-c"]
+    command: ["echo 'use: docker compose run --rm tools \"<cmd>\"'"]
+    depends_on: {}
+    environment:
+      <<: *airflow-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////tmp/airflow-tests.db
+      SENTINEL_LAKE_ROOT: /tmp/sentinel-test/lake
+      SENTINEL_EVENTS_DIR: /tmp/sentinel-test/events
+
+volumes:
+  postgres-data:
+  redpanda-data:
+  prometheus-data:
+  grafana-data:
+  airflow-logs:

@@ -1,0 +1,15 @@
+# Runtime deps for Spark jobs, the Glue job, and Great Expectations validation.
+# Installed into an isolated venv (/opt/venv/jobs) inside the Airflow image so job
+# dependencies never fight Airflow's own constraint set.
+#
+# Spark/Delta versions deliberately mirror AWS Glue 5.0 (Spark 3.5.4, Delta 3.3.0,
+# Python 3.11) so the same code runs locally and on real Glue.
+# Compile the lock with: make lock
+pyspark==3.5.4
+delta-spark==3.3.0
+deltalake==1.6.6
+great-expectations==1.24.0
+pandas==2.2.3
+numpy==1.26.4
+pyarrow==17.0.0
+pydantic==2.11.7

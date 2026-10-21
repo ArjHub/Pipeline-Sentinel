@@ -1,0 +1,34 @@
+# Turns Airflow's dotted StatsD names into labelled Prometheus metrics.
+# Timers are exported in seconds by statsd-exporter.
+mappings:
+  - match: "airflow.dagrun.duration.*.*"
+    name: "airflow_dagrun_duration"
+    labels:
+      state: "$1"
+      dag_id: "$2"
+  - match: "airflow.ti.finish.*.*.*"
+    name: "airflow_ti_finish"
+    labels:
+      dag_id: "$1"
+      task_id: "$2"
+      state: "$3"
+  - match: "airflow.dag.*.*.duration"
+    name: "airflow_task_duration"
+    labels:
+      dag_id: "$1"
+      task_id: "$2"
+  - match: "airflow.ti_failures"
+    name: "airflow_ti_failures"
+  - match: "airflow.ti_successes"
+    name: "airflow_ti_successes"
+  - match: "airflow.scheduler_heartbeat"
+    name: "airflow_scheduler_heartbeat"
+  - match: "airflow.dag_processing.import_errors"
+    name: "airflow_dag_import_errors"
+  - match: "airflow.pool.open_slots.*"
+    name: "airflow_pool_open_slots"
+    labels:
+      pool: "$1"
+  - match: "airflow.*"
+    name: "airflow_other"
+    action: drop
