@@ -203,6 +203,27 @@ up to `SENTINEL_KAFKA_TIMEOUT_MS` (5 s) when it flushes. After `docker compose s
 redpanda && make replay-events`, bronze had exactly those 58 rows. Replaying again
 inserted 0 rows and counted 276 as duplicates.
 
+**`make replay-events` waits for the lander.** After publishing, it polls the
+`sentinel-lander` consumer group's committed offsets against each partition's high
+watermark (the numbers `rpk group describe` shows) until the lag is 0 on all four topics.
+Then it prints `lander caught up`. If that hasn't happened after 180 s, it prints a
+warning with the commands to check and exits 1. The bronze query is only complete after
+`lander caught up`.
+
+**Reconnecting after a broker restart.** Redpanda restores the consumer group, including
+the lander's old member, from `__consumer_offsets`. A normal rejoin then waited about
+30 s for that old member to expire. This was measured as the time from "Redpanda healthy"
+to "lander caught up", with 90 s and 150 s outages, and the original 30 s session
+timeout, 30 s connection-setup timeout and 10 s maximum backoff. The lander now uses
+**static group membership** (`group.instance.id=sentinel-lander-0`), so a rejoining
+lander replaces its old member immediately. The same 150 s outage now takes **2 s**. It is
+safe because exactly one lander runs. A second consumer in the group, such as a one-off
+`python -m sentinel.lander --drain`, must pass its own `--instance-id`, or the broker
+fences one of the two. Session and connection-setup timeouts were also cut to 10 s and
+5 s, and the maximum reconnect backoff to 2 s. On their own those didn't change the
+measured 30 s, but they make a dead broker show up sooner. Expect a few more seconds while
+Docker DNS re-registers the `redpanda` name after `docker compose start`.
+
 ```bash
 make query-bronze DATE=2026-10-20     # bronze counts + samples (filtered by business date)
 make replay-events [DAY=2026-10-21]   # journal -> Redpanda (DAY = emitted date; default all)
@@ -210,24 +231,50 @@ make deploy                           # record code versions now
 docker compose logs -f sentinel-lander
 ```
 
-## Measured resource use (Phase 1)
+### Known limitations (event stream)
 
-Measured with `make mem-profile` (samples `docker stats` every 2 s during `make run-all`)
-on an Apple Silicon MacBook (16 GB) with Docker Desktop set to 8 GB:
+- **A run with the broker down takes about 2× as long** (152 s vs about 70 s for `run-all`).
+  Each job process waits up to 5 s for Kafka when it flushes. This is accepted
+  deliberately: the journal keeps every event, and replay is idempotent. A circuit
+  breaker that skips publishing after the first timeout would save the time, but it adds
+  shared state between task processes for a failure mode that is rare and visible. It
+  isn't built.
+- **The lander crash-loops on a failed Delta write, by design.** If writing a batch to
+  bronze raises an error (disk full, corrupt table, permissions), the process exits
+  *without* committing offsets. Docker restarts it (`restart: unless-stopped`), and it
+  retries the same batch, so nothing is skipped or lost. The cost is that a persistent
+  write error keeps the lander restarting, and bronze stops advancing until someone
+  fixes it. A malformed *message* is different: it goes to `_dead_letter` and never
+  blocks the stream. Today you notice a crash loop through `docker compose ps`
+  (restarting) or a stale `sentinel_lander_last_success_timestamp`. *(Phase 6)* A
+  Prometheus alert on that metric and on container restarts will page instead.
+
+## Measured resource use (Phase 2, lander running)
+
+Measured with `make mem-profile DATE=2026-10-19` (samples `docker stats` every 2 s during
+`make run-all`) on an Apple Silicon MacBook (16 GB) with Docker Desktop set to 8 GB, on
+2026-10-23, with all eight services up, including `sentinel-lander`:
 
 | Container | Idle MiB | Peak MiB |
 |---|---:|---:|
-| airflow-scheduler (runs the Spark JVMs) | 546 | 2,184 |
-| airflow-webserver | 1,335 | 1,411 |
-| redpanda | 241 | 242 |
-| grafana | 163 | 163 |
-| prometheus | 104 | 117 |
-| postgres | 94 | 96 |
-| statsd-exporter | 17 | 25 |
-| **Total** | **2,499** | **4,190** |
-| *sentinel-lander (Phase 2, idle)* | *357* | |
+| airflow-scheduler (runs the Spark JVMs) | 688 | 2,250 |
+| airflow-webserver | 1,483 | 1,488 |
+| sentinel-lander | 251 | 455 |
+| grafana | 208 | 208 |
+| prometheus | 161 | 161 |
+| redpanda | 158 | 158 |
+| postgres | 78 | 82 |
+| statsd-exporter | 41 | 42 |
+| **Total** (idle sum / highest simultaneous total) | **3,066** | **4,627** |
 
-A full `run-all` takes about 65–75 s. Each Spark job runs 7–14 s, mostly JVM start-up.
+The Phase 1 peak was 4,190 MiB without the lander. The lander's peak happens while it
+MERGEs a batch into bronze. *(The first Phase 2 profile reported a 6,361 MiB total. That
+was a bug in `mem_profile.sh`: a sample cut short when the sampler was stopped got merged
+into the next one. It is fixed, and the per-container peaks were unaffected.)*
+
+A full `run-all` takes about 65–75 s on its own. The profiled run above took 109 s,
+because sampling `docker stats` every 2 s competes for the same CPU. Each Spark job runs
+7–14 s, mostly JVM start-up.
 
 ## Reproducibility
 

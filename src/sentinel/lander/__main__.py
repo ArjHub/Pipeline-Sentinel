@@ -24,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bootstrap", default=os.environ.get("SENTINEL_KAFKA_BOOTSTRAP"))
     parser.add_argument("--group", default="sentinel-lander")
+    parser.add_argument(
+        "--instance-id",
+        help="static group member id (default <group>-0). A second process in the same "
+        "group needs its own, or the broker fences one of them",
+    )
     parser.add_argument("--drain", action="store_true", help="exit after topics go idle")
     parser.add_argument("--idle-seconds", type=float, default=8.0)
     parser.add_argument("--metrics-port", type=int, default=int(os.environ.get("METRICS_PORT", 0)))
@@ -41,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
 
-    consumer = Consumer(consumer_config(args.bootstrap, args.group))
+    consumer = Consumer(consumer_config(args.bootstrap, args.group, args.instance_id))
     consumer.subscribe(TOPICS)
     logging.getLogger("sentinel.lander").info("consuming %s from %s", TOPICS, args.bootstrap)
     try:

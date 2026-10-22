@@ -80,3 +80,8 @@ def test_consumer_never_auto_commits() -> None:
     cfg = consumer_config("b:9092", "g")
     assert cfg["enable.auto.commit"] is False
     assert cfg["auto.offset.reset"] == "earliest"
+
+
+def test_consumer_uses_static_membership_for_fast_rejoin() -> None:
+    assert consumer_config("b:9092", "g")["group.instance.id"] == "g-0"
+    assert consumer_config("b:9092", "g", "g-drain")["group.instance.id"] == "g-drain"

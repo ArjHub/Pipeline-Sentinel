@@ -32,13 +32,24 @@ BATCH_SECONDS = Histogram("sentinel_lander_batch_seconds", "Time to land one bat
 LAST_SUCCESS = Gauge("sentinel_lander_last_success_timestamp", "Unix time of last landed batch")
 
 
-def consumer_config(bootstrap: str, group_id: str) -> dict[str, Any]:
+def consumer_config(
+    bootstrap: str, group_id: str, instance_id: str | None = None
+) -> dict[str, Any]:
     return {
         "bootstrap.servers": bootstrap,
         "group.id": group_id,
         "auto.offset.reset": "earliest",
         "enable.auto.commit": False,  # we commit after the Delta write, never before
-        "session.timeout.ms": 30000,
+        # Static membership: after a broker restart Redpanda restores the group with the
+        # lander's old member, and a plain rejoin waited ~30 s for it to expire (measured
+        # with 90 s and 150 s outages). With a fixed instance id the rejoining lander
+        # replaces its old self at once. Safe because there is exactly one lander.
+        "group.instance.id": instance_id or f"{group_id}-0",
+        # Shorter than the librdkafka defaults (30 s) so a dead broker or a stale
+        # container IP is noticed sooner; the broker is on the same Docker network.
+        "session.timeout.ms": 10000,
+        "socket.connection.setup.timeout.ms": 5000,
+        "reconnect.backoff.max.ms": 2000,
     }
 
 

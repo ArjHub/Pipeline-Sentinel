@@ -34,11 +34,14 @@ def mib(v):
 lines = open(sys.argv[1]).read().splitlines()
 idle_end = int(sys.argv[2])
 idle, peak = {}, defaultdict(float)
-totals, current = [], 0.0
+totals, current, seen = [], 0.0, set()
 for i, line in enumerate(lines):
     if line == "---":
-        totals.append(current); current = 0.0; continue
+        totals.append(current); current, seen = 0.0, set(); continue
     name, usage = line.split()
+    if name in seen:  # a sample cut short by `kill` has no "---"; don't sum two samples
+        totals.append(current); current, seen = 0.0, set()
+    seen.add(name)
     m = mib(usage)
     current += m
     if i < idle_end:

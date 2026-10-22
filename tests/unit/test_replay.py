@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from sentinel.events import JobLog, JobMetric, JsonlFileSink, RunContext
 from sentinel.events.replay import journal_files, replay
 from sentinel.lander.bronze import BronzeWriter, RawMessage
@@ -73,3 +75,71 @@ def test_replay_into_bronze_twice_is_idempotent(tmp_path) -> None:
         result = writer.land(msgs)
         expected = 4 if attempt == 0 else 0
         assert sum(result.inserted.values()) == expected
+
+
+class FakeLagConsumer:
+    """Two topics, two partitions each; committed offsets advance as the lander 'catches up'."""
+
+    def __init__(self, committed: dict[tuple[str, int], int]) -> None:
+        self.committed_offsets = committed
+        self.high = {("a", 0): 10, ("a", 1): 5, ("b", 0): 3, ("b", 1): 0}
+
+    def list_topics(self, timeout):
+        class T:
+            def __init__(self, n):
+                self.partitions = dict.fromkeys(range(n))
+
+        class M:
+            topics = {"a": T(2), "b": T(2)}
+
+        return M()
+
+    def committed(self, tps, timeout):
+        for tp in tps:
+            tp.offset = self.committed_offsets.get((tp.topic, tp.partition), -1001)
+        return tps
+
+    def get_watermark_offsets(self, tp, timeout):
+        return 0, self.high[(tp.topic, tp.partition)]
+
+
+def test_consumer_lag_counts_uncommitted_messages_per_topic() -> None:
+    pytest.importorskip("confluent_kafka")
+    from sentinel.events.replay import consumer_lag
+
+    # b/0 has never been committed (-1001): everything from the low watermark is lag.
+    consumer = FakeLagConsumer({("a", 0): 7, ("a", 1): 5, ("b", 1): 0})
+    assert consumer_lag(consumer, ["a", "b", "missing"]) == {"a": 3, "b": 3, "missing": 0}
+
+
+def test_wait_caught_up_returns_when_lag_reaches_zero() -> None:
+    from sentinel.events.replay import wait_caught_up
+
+    lags = iter([{"t": 5}, {"t": 2}, {"t": 0}])
+    clock = iter(range(100))
+    ok, lag = wait_caught_up(
+        lambda: next(lags), timeout_s=60, clock=lambda: next(clock), sleep=lambda s: None
+    )
+    assert ok and lag == {"t": 0}
+
+
+def test_wait_caught_up_times_out_and_survives_broker_errors() -> None:
+    from sentinel.events.replay import wait_caught_up
+
+    def lag_fn():
+        raise RuntimeError("broker down")
+
+    t = iter(range(0, 1000, 10))
+    ok, lag = wait_caught_up(lag_fn, timeout_s=30, clock=lambda: next(t), sleep=lambda s: None)
+    assert not ok and lag == {"<broker unreachable>": -1}
+
+
+def test_replay_main_warns_when_lander_does_not_catch_up(tmp_path, monkeypatch, capsys) -> None:
+    from sentinel.events import replay as mod
+
+    _journal(tmp_path)
+    monkeypatch.setattr("confluent_kafka.Producer", lambda cfg: RecordingProducer(), raising=False)
+    monkeypatch.setattr(mod, "_wait_for_lander", lambda b, g, t: print("WARNING: x") or 1)
+    rc = mod.main(["--events-dir", str(tmp_path), "--bootstrap", "b:1", "--wait-timeout", "1"])
+    assert rc == 1
+    assert "WARNING" in capsys.readouterr().out
