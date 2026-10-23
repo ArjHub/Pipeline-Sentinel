@@ -10,12 +10,12 @@ import argparse
 import logging
 import os
 import signal
-import sys
 import threading
 
 from confluent_kafka import Consumer
 from prometheus_client import start_http_server
 
+from sentinel.cli import exit_now
 from sentinel.lander.bronze import TOPICS, BronzeWriter
 from sentinel.lander.service import consumer_config, run
 
@@ -63,4 +63,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_now(main())

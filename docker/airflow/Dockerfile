@@ -39,6 +39,7 @@ RUN pip install --no-cache-dir "pytest==8.2.1" "confluent-kafka==2.13.2" \
 COPY --chown=airflow:root pipelines /opt/sentinel/pipelines
 COPY --chown=airflow:root src /opt/sentinel/src
 COPY --chown=airflow:root scripts /opt/sentinel/scripts
+COPY --chown=airflow:root config /opt/sentinel/config
 
 ENV PYTHONPATH=/opt/sentinel:/opt/sentinel/src \
     SENTINEL_JOBS_PYTHON=/opt/venv/jobs/bin/python \

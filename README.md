@@ -13,14 +13,14 @@ A self-diagnosing data pipeline platform. It monitors batch pipelines, detects f
 and data drift, and uses an LLM to explain the likely root cause and suggest a fix. A
 human then approves any retry from Slack.
 
-> **Status: Phase 2 of 6 (event stream).** Each phase lands as its own commit and tag.
+> **Status: Phase 3 of 6 (detection).** Each phase lands as its own commit and tag.
 > Sections marked *(Phase N)* describe work that hasn't been built yet.
 
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Pipelines to monitor: 4 DAGs, Spark + Glue-shim jobs, GX suites, structured events | ✅ done |
 | 2 | Event stream: Redpanda producers, Delta bronze lander, deploy events, replay | ✅ done |
-| 3 | Detection: failed jobs, schema drift, late data, volume anomalies, suppression | ⏳ |
+| 3 | Detection: failed jobs, schema drift, late data, volume anomalies, suppression | ✅ done |
 | 4 | Diagnosis agent (Claude, tool use) + Slack Block Kit + FastAPI retry endpoint | ⏳ |
 | 5 | Benchmark: 30 labelled faults, accuracy/latency/cost, manual baseline | ⏳ |
 | 6 | Terraform (plan only), CI, Grafana dashboard, final docs | ⏳ |
@@ -40,6 +40,7 @@ Nothing here comes from any employer, client, or real person. Emails look like
 | `payments_etl` Glue job | **Real PySpark, Glue APIs shimmed** | `glue_compat` runs the same script without `awsglue`. DynamicFrames, bookmarks and the Glue catalog are *not* exercised locally (LocalStack Glue is a paid feature) |
 | Great Expectations 1.24 suites | **Real** | |
 | Kafka API (Redpanda v26) | **Real** | Jobs, Airflow callbacks, GX and the deploy recorder publish; the lander consumes into Delta bronze |
+| Detection (4 detectors + correlation → Delta `incidents`) | **Real** | Batch pass over bronze, run by `make detect` (not scheduled yet) |
 | Prometheus + Grafana + statsd-exporter | **Real** | Airflow metrics scraped; dashboard comes in Phase 6 |
 | Claude diagnosis agent *(Phase 4)* | **Real API** if `ANTHROPIC_API_KEY` is set; a fake LLM in tests | Hard budget cap, enforced by a cost ledger |
 | Slack *(Phase 4)* | **Mocked**: local mock-Slack page + signed requests to the real FastAPI handler | A real-Slack setup guide will be provided; not tested against real Slack |
@@ -55,6 +56,8 @@ make up        # creates .env with random secrets, builds the image, starts the 
 make run-all   # runs all 4 DAGs for yesterday (UTC) and waits; exit 0 only if all succeed
 make query     # row counts in the curated Delta tables + events emitted for that date
 make query-bronze  # bronze event tables (row counts + samples) for that date
+make detect    # run detection once over bronze; upsert the incidents table
+make query-incidents  # list incidents (STATUS=open, ID=INC-... for full evidence)
 make test      # unit tests (incl. local Spark + GX + Delta) and DAG-integrity tests, in a container
 make test-e2e  # end-to-end: trigger a DAG on the live stack, assert its events land in bronze
 make down      # stop (keeps data);  `make clean` also deletes volumes and the lake
@@ -156,6 +159,70 @@ ingest_orders → Clear**, with "Downstream" on and "Upstream" off.
    ```
    `ingest_orders` and `validate_orders` go green again.
 
+### Break it on purpose, then detect it (Phase 3)
+
+`make break-it` injects one of three faults on the live stack and waits until the
+affected DAG runs finish. It prints every command it runs (`+ ...`), so you can also type
+them yourself. Use a date you haven't used yet. Each fault takes 1–2.5 min.
+
+| Fault | What it does to the raw data | What Airflow shows | Expected incident |
+|---|---|---|---|
+| `missing_amount` | Green run first, then cuts column 4 (`amount`) out of the orders CSV and re-runs `ingest_orders` and `daily_revenue_agg` | `ingest_orders` failed (SchemaMismatchError), `wait_for_orders_ingest` failed | **schema_change** on orders_ingest (`-amount`, high), failed task attached as a symptom; downstream daily_revenue_agg linked to it |
+| `volume_drop` | Green run first, then keeps 1 orders row in 3 (`awk 'NR==1 \|\| NR%3==0'`), spread over the whole day, and re-runs | **Everything green.** Only a detector can catch this | **volume_anomaly** on orders_ingest (about −62 to −67%, high); downstream daily_revenue_agg rows_in drop linked to it |
+| `stale_customers` | Never runs `generate_customers` for the date (marked success); serves the newest existing snapshot instead (two or more days old) | `validate_customers` failed (GX freshness), `wait_for_customers_dim` failed | **late_data** on customers_dim (about 48 h behind, SLA 24 h, high); downstream daily_revenue_agg linked to it |
+
+```bash
+make break-it FAULT=missing_amount  DATE=2026-10-12
+make break-it FAULT=volume_drop     DATE=2026-10-13
+make break-it FAULT=stale_customers DATE=2026-10-26   # >= 2 days after the newest customers date
+
+make detect             # one pass over bronze; prints open primaries with their downstream
+make query-incidents    # the table; STATUS=open to filter
+make query-incidents ID=INC-xxxxxxxxxx   # full JSON evidence for one incident
+
+make run-all DATE=2026-10-12 && make detect   # fix: regenerate + re-run -> status resolved
+```
+
+Run `make break-it FAULT=stale_customers` *last*, on the latest date. The customers dim
+only moves forward (a MERGE never replaces a newer `updated_at` with an older one). So
+once a newer snapshot has been loaded, an old file for an earlier date can't make the
+dim stale. The script refuses a date that is less than two days after the newest
+customers snapshot.
+
+What `make detect` printed on the live stack (2026-10-23) after the three faults above,
+on dates 2026-10-16 / 18 / 22:
+
+```
+findings: 10 (failed_job=5, late_data=1, schema_change=2, volume_anomaly=2)
+incidents: 6 (primary=3, downstream=3)
+
+open primary incidents: 3
+  INC-c5962d3281  high   schema_change   orders_ingest      orders_ingest input schema changed vs last good run: -amount
+      └─ INC-6a9663908b downstream daily_revenue_agg (open)
+  INC-c47ffd2881  high   volume_anomaly  orders_ingest      orders_ingest.rows_in drop for ds=2026-10-18: 846 rows vs expected ~2198 (-62%, cold_start_ratio)
+      └─ INC-9d219c1b04 downstream daily_revenue_agg (open)
+  INC-a04953459f  high   late_data       customers_dim      customers is stale for ds=2026-10-22: latest updated_at is 48.08 h before end of day (SLA 24.0 h)
+      └─ INC-da76dac503 downstream daily_revenue_agg (open)
+```
+
+Ten findings collapse into three primaries. The five failed tasks are either symptoms
+attached to their cause or downstream sensor failures. The volume incident says
+`cold_start_ratio` because the live lake has only a few days of history. With three or
+more same-weekday points, it switches to the robust z-score. Ids are deterministic, so
+the same fault for a new date gets the id shown above (see "Recurrences" below).
+
+Two things that look like bugs but are intended:
+
+- **Truncating instead of thinning** (`head -n 600` on the orders file) gives a
+  **late_data** incident, not a volume one. A file that stops mid-morning is a partial
+  delivery: its latest `order_ts` is hours before the end of the day *and* it is short.
+  Both signals land in one incident, named by the higher-priority cause, with the volume
+  drop listed as a second signal (`test_real_truncated_file_is_one_incident_with_two_signals`).
+- **Recurrences reopen the same incident.** If the same fault comes back on another
+  date, it joins its existing incident, even a resolved one. The incident then lists
+  every affected date. For example, the 2026-10-16 `-amount` above reopened the incident
+  from an earlier 2026-10-20 demo.
+
 ## The event stream (Phase 2)
 
 ```mermaid
@@ -249,28 +316,160 @@ docker compose logs -f sentinel-lander
   (restarting) or a stale `sentinel_lander_last_success_timestamp`. *(Phase 6)* A
   Prometheus alert on that metric and on container restarts will page instead.
 
-## Measured resource use (Phase 2, lander running)
+## Detection (Phase 3)
 
-Measured with `make mem-profile DATE=2026-10-19` (samples `docker stats` every 2 s during
-`make run-all`) on an Apple Silicon MacBook (16 GB) with Docker Desktop set to 8 GB, on
-2026-10-23, with all eight services up, including `sentinel-lander`:
+```mermaid
+flowchart LR
+  B[(bronze<br/>job_metrics, dq_results)] --> O[observations<br/>attempts, job runs, DQ runs]
+  O --> F1[failed_jobs] & F2[schema_drift] & F3[late_data] & F4[volume]
+  F1 & F2 & F3 & F4 --> C[correlate<br/>symptom → cause<br/>downstream → root<br/>day → incident]
+  C --> I[(silver/incidents<br/>Delta, upsert on dedup_key)]
+```
+
+`make detect` is one pass: read bronze (the last `history_days` of `event_date`
+partitions), run the four detectors, correlate, upsert. It's a batch job, deterministic
+and idempotent. Running it twice writes nothing the second time (no new Delta version).
+It reads **only bronze**, never Kafka, the curated tables or Airflow. All thresholds are
+in [`config/detection.toml`](config/detection.toml). Every key is required, with no
+hidden defaults (`SENTINEL_DETECTION_CONFIG` points elsewhere).
+
+| Detector | Signal (from bronze) | Fires when | Clears when |
+|---|---|---|---|
+| failed_job | `task_run` with state `failed` (`job_metric` stands in if the callback never arrived) | a task attempt fails; grouped by task + error signature (error type, failed GX expectations, or the first line of the message with digits masked) | a later attempt of the same task doesn't fail that way |
+| schema_change | `job_metric.input_schema` | the observed input columns differ (by name and Spark type) from the job's **last successful** run. A failed run never becomes the baseline; the first run seen is the baseline (cold start) | a later run matches the baseline again |
+| late_data | the GX freshness outcome's **observed max** (e.g. `max(updated_at)`) | end of ds − observed max > the pipeline's SLA (2 h orders/payments, 24 h customers). Recomputed here, not taken from GX's pass/fail, so it knows *how* late. High at ≥ 2× SLA. Optional arrival SLA (final task done by end of ds + N h), off locally because DAGs aren't scheduled | a later DQ run is fresh |
+| volume_anomaly | `job_metric.rows_in` | robust z-score vs a baseline (below) | a later run of that ds is normal |
+
+### Volume method
+
+```
+baseline = same weekday over the last 56 days     (orders, payments, revenue)
+         | the last 7 days                         (customers: a growing snapshot)
+expected = median(baseline)
+sigma    = max(1.4826 × MAD(baseline), 2% of expected)
+anomaly  = |value − expected| / sigma ≥ 3.5   AND   |value / expected − 1| ≥ 15%
+```
+
+- **Median and MAD, not mean and stddev.** History contains past incidents. One 70%-drop
+  day drags a mean and inflates a stddev enough to hide the next one. The median and MAD
+  barely move (`test_a_past_incident_in_history_does_not_mask_the_next_one`).
+- **Same weekday.** Orders have a weekly cycle (Saturday ≈ 1.3× Tuesday). Pooled across
+  all days, the cycle inflates the MAD. Of the 52 Saturdays of 2026, 2 pooled scores
+  crossed z = 3.5 on clean data, while a real 20% Saturday drop scored z ≈ 0.3 and was
+  missed. Against Saturdays only, the max normal Saturday is 3.4 and the 20% drop is
+  caught.
+- **Both conditions, z and relative change.** Same-weekday history is short (5–8 points),
+  so z alone is noisy. Over every day of 2026, 9 normal orders/payments days scored |z|
+  3.5–4.3, all with a change under 12%. The 15% floor is what keeps them quiet. It is
+  also about the smallest move worth paging someone over.
+- **"recent" for customers.** The customers snapshot grows by 25 a day and has no weekly
+  cycle. A 56-day same-weekday median lags it by about four weeks of growth: in February,
+  while the table was small, that was +15% and crossed both thresholds on 5 clean days.
+  The median of the last 7 days lags about 4 days (< 2%). This was found by the
+  year-long check below and fixed by giving each pipeline a `volume_baseline` setting.
+- **Cold start.** With fewer than 3 baseline points, a change is flagged only if it is
+  ≥ 50% against the median of whatever history exists (wider than the weekly swing). With
+  no history at all, only an empty output (0 rows) is flagged.
+
+`test_a_year_of_clean_generator_volumes_raises_nothing` replays every day of 2026, with
+history starting in November 2025, for all four metrics on their configured baselines:
+**0 anomalies**.
+
+### Dedup and root cause
+
+Three steps, all in `correlate.py`:
+
+1. **Within one run (pipeline, ds): a cause absorbs its symptoms.** A failed task inside
+   the time window of a schema, freshness or volume finding on the same run is attached
+   to it as a symptom, not reported separately. If one run has several causes, they
+   merge into one occurrence, named by priority: `schema_change > late_data >
+   volume_anomaly > failed_job` (the most specific explanation wins).
+2. **Across pipelines: downstream links to upstream, and the upstream is primary.** An
+   occurrence on pipeline X links to an open primary on one of X's upstreams (config
+   `upstream`, checked against the DAGs by `tests/dags`) when they share a ds and the
+   upstream started first, within the tolerance (300 s). If several upstreams qualify,
+   the one a failed `wait_for_<upstream>` sensor names wins, then the earliest. The
+   downstream incident keeps its own row (`role=downstream`, `root_incident_id`) so it
+   resolves on its own. It is never dropped, because a downstream problem that turns out
+   to be independent must not disappear.
+3. **Across days: one incident per (pipeline, type, fingerprint).** The fingerprint is
+   the specific thing that broke (`orders_ingest:-amount`, `freshness:customers.updated_at`,
+   `volume:orders_ingest.rows_in:drop`). The same break on several days is one incident
+   listing every affected ds. `incident_id = INC- + sha256(dedup_key)[:10]`, so ids are
+   stable across re-runs, replays and machines.
+
+Status: `open` while any occurrence is active, `resolved` when all have cleared, and
+`superseded` when a re-run of detection no longer derives an open incident (for example
+after a config change). Human states (acknowledged, dismissed) arrive with the Slack flow
+in Phase 4.
+
+**Why a batch job, not Spark Structured Streaming or a Kafka consumer.** The volume is
+tiny: tens of events per pipeline per day. Every detector needs *history* (last good
+schema, same-weekday medians, earlier attempts), which bronze already holds and a stream
+would have to rebuild as state. A pass over bronze takes about 1.3 s, peaks at about
+500 MiB RSS, and needs no JVM. It is deterministic: the same bronze always gives the same
+incidents, which is what the benchmark needs. Streaming would add checkpoints,
+watermarks and state stores to save seconds of latency that nothing here needs.
+Detection latency is "how often you run it". *(Phase 6)* A schedule or a loop runs it
+every minute.
+
+### Tests (Phase 3)
+
+| Test file | What it proves |
+|---|---|
+| `test_detect_scenarios.py` | 24 h of clean data after 5 weeks: **0 findings**. A 7-day clean replay, detecting after each day: **0 findings, 0 incidents** at every step. All 36 days of five clean weeks, including cold start: 0. Each of the three faults gives **exactly one primary**, plus its linked downstream. A fix and re-run resolves everything. The same fault on consecutive days is one incident. Determinism (event order doesn't matter) |
+| `test_detect_real_producers.py` | The three faults through the **real** generators, Spark jobs, GX suites, events, BronzeWriter and `load_bronze`: exactly one incident each. A real clean day gives none. A truncated file gives one incident with two signals |
+| `test_detect_volume.py` | The method above, including the year of clean data and the pooled-vs-same-weekday rationale as executable checks |
+| `test_detect_{config,observations,failed_jobs,schema,late_data,correlate,store,cli}.py` | Each piece on its own; the CLI end to end on a temp lake, idempotent |
+| `tests/dags` | Config lineage (`upstream`, `final_task`) matches the DAGs' sensors and leaves |
+
+### Known limitations (detection)
+
+- **One-shot.** `make detect` runs when you run it. Nothing schedules it yet *(Phase 6)*.
+- **No arrival SLA locally.** "The data never showed up" is only caught if a task fails
+  or a freshness check runs. The arrival check exists and is tested, but it is off
+  because the DAGs have `schedule=None` and dates are backfilled by hand.
+- **Volume history needs time.** With fewer than 3 same-weekday runs (the first 2–3
+  weeks), only a ≥ 50% change is caught.
+- **Lineage is in config, not discovered.** A DAG test keeps it in sync with the sensors.
+  A pipeline that reads another's table without a sensor must be added by hand.
+- **Recurrences reopen the old incident** (see above). There is no time window yet.
+
+## Measured resource use (Phase 3)
+
+Measured on 2026-10-23 on an Apple Silicon MacBook (16 GB). Docker Desktop is set to
+8 GB (`memoryMiB: 8192`, swap 1 GB; the VM reports 7.75 GiB usable). All eight services
+were up. `make mem-profile DATE=2026-10-20` samples `docker stats` every 2 s during
+`make run-all`, with `make detect` fired 45 s into the run:
 
 | Container | Idle MiB | Peak MiB |
 |---|---:|---:|
-| airflow-scheduler (runs the Spark JVMs) | 688 | 2,250 |
-| airflow-webserver | 1,483 | 1,488 |
-| sentinel-lander | 251 | 455 |
-| grafana | 208 | 208 |
-| prometheus | 161 | 161 |
-| redpanda | 158 | 158 |
-| postgres | 78 | 82 |
-| statsd-exporter | 41 | 42 |
-| **Total** (idle sum / highest simultaneous total) | **3,066** | **4,627** |
+| airflow-scheduler (runs the Spark JVMs and `make detect`) | 726 | 2,360 |
+| airflow-webserver | 972 | 1,035 |
+| sentinel-lander | 341 | 463 |
+| redpanda | 305 | 306 |
+| grafana | 224 | 224 |
+| prometheus | 135 | 136 |
+| postgres | 76 | 80 |
+| statsd-exporter | 44 | 44 |
+| **Total** (idle sum / highest simultaneous total) | **2,823** | **4,502** |
 
-The Phase 1 peak was 4,190 MiB without the lander. The lander's peak happens while it
-MERGEs a batch into bronze. *(The first Phase 2 profile reported a 6,361 MiB total. That
-was a bug in `mem_profile.sh`: a sample cut short when the sampler was stopped got merged
-into the next one. It is fixed, and the per-container peaks were unaffected.)*
+- **The detector process** peaks at **503 MiB RSS** (read from `/proc/<pid>/status`
+  `VmHWM`, because one pass takes 1.3 s, shorter than one `docker stats` sample). Most of
+  that is pyarrow, pandas and deltalake being imported. It runs inside the scheduler's
+  3.5 GiB limit.
+- **`make test` is the biggest consumer.** It starts a separate `tools` container (no
+  memory limit) running local Spark next to the stack. Sampled every ~2 s during the
+  full suite, it peaked at 2,048 MiB, and the highest simultaneous total across all
+  containers was **4,907 MiB, 63% of the VM**.
+- **Headroom is about 2.8 GiB at the worst moment measured.** The stack isn't near the
+  8 GB limit. Docker Desktop's own log for the one unexpected stop during development
+  (2026-10-22 19:45 UTC) shows the app's normal quit sequence and no OOM in the VM log,
+  so it wasn't memory.
+- Phase 2 measured 4,627 MiB peak (webserver 1,483 idle then; it varies with how long
+  the webserver has run). *(The first Phase 2 profile reported 6,361 MiB. That was a bug
+  in `mem_profile.sh`: a sample cut short when the sampler was stopped got merged into
+  the next one. It is fixed.)*
 
 A full `run-all` takes about 65–75 s on its own. The profiled run above took 109 s,
 because sampling `docker stats` every 2 s competes for the same CPU. Each Spark job runs
@@ -313,10 +512,13 @@ because sampling `docker stats` every 2 s competes for the same CPU. Each Spark 
 pipelines/   dags/ jobs/ generators/ quality/ common/   # the pipelines being monitored
 src/sentinel/ events/ (models, sinks, replay, schema) instrumentation/ (job wrapper, logging,
              airflow_callbacks) lander/ (bronze writer, consume loop) deploy.py airflow_client.py
+             detect/ (config, observations, four detectors, correlate, store) cli.py
 schemas/     event.schema.json                          # generated contract (make schemas)
 docker/      airflow/Dockerfile
 observability/ prometheus/ statsd/ grafana/
-scripts/     run_all.py query_lake.py query_bronze.py init_env.sh wait_healthy.sh mem_profile.sh create_topics.sh
+config/      detection.toml                             # every detection threshold
+scripts/     run_all.py query_lake.py query_bronze.py query_incidents.py break_it.sh
+             init_env.sh wait_healthy.sh mem_profile.sh create_topics.sh
 tests/       unit/ dags/ integration/
 docs/        architecture.md
 ```

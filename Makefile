@@ -15,6 +15,7 @@ export
 
 .DEFAULT_GOAL := help
 .PHONY: help env build up down clean ps logs deploy run-all query query-bronze replay-events land \
+	detect query-incidents break-it \
 	schemas test test-unit test-dags test-e2e lint fmt lock mem mem-profile
 
 help: ## Show targets
@@ -63,6 +64,16 @@ query-bronze: ## Bronze row counts + sample rows for DATE (business date)
 replay-events: ## Re-publish the JSONL journal to Redpanda (DAY=<emitted date> to limit)
 	$(COMPOSE) exec airflow-scheduler $(JOBS_PY) -m sentinel.events.replay $(if $(DAY),--date $(DAY))
 
+detect: ## Run detection once over bronze; upsert the incidents table (NOW=<iso> to override)
+	$(COMPOSE) exec airflow-scheduler $(JOBS_PY) -m sentinel.detect $(if $(NOW),--now $(NOW))
+
+query-incidents: ## List incidents (STATUS=open|resolved|superseded, ID=INC-... for evidence)
+	$(COMPOSE) exec airflow-scheduler $(JOBS_PY) scripts/query_incidents.py \
+	  $(if $(STATUS),--status $(STATUS)) $(if $(ID),--id $(ID))
+
+break-it: ## Inject a fault on the live stack: FAULT=missing_amount|volume_drop|stale_customers DATE=
+	bash scripts/break_it.sh $(FAULT) $(DATE)
+
 schemas: ## Regenerate schemas/event.schema.json from the Pydantic models
 	$(COMPOSE) run --rm tools "$(JOBS_PY) -m sentinel.events.schema"
 
@@ -80,8 +91,9 @@ test-e2e: ## End-to-end: run a DAG on the live stack, assert its events land in 
 lint: ## ruff lint + format check
 	$(COMPOSE) run --rm tools "$(JOBS_PY) -m ruff check . && $(JOBS_PY) -m ruff format --check ."
 
-fmt: ## Auto-format with ruff
-	$(COMPOSE) run --rm tools "$(JOBS_PY) -m ruff check --fix . && $(JOBS_PY) -m ruff format ."
+fmt: ## Auto-format with ruff (formats even if lint errors remain; exits non-zero then)
+	$(COMPOSE) run --rm tools "$(JOBS_PY) -m ruff format . && $(JOBS_PY) -m ruff check --fix .; \
+	  rc=\$$?; $(JOBS_PY) -m ruff format -q .; exit \$$rc"
 
 lock: ## Re-compile hashed lockfiles (uv, pinned) inside the base image
 	docker run --rm -v "$$PWD/requirements:/req" -w /req --entrypoint bash \

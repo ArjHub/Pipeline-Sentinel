@@ -14,6 +14,7 @@ from pathlib import Path
 from deltalake import DeltaTable
 
 from pipelines.common.config import DATASETS, curated_path, lake_root
+from sentinel.cli import exit_now
 
 
 def main() -> None:
@@ -59,3 +60,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    exit_now(0)

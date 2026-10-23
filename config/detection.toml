@@ -1,0 +1,95 @@
+# PipelineSentinel detection thresholds: the ONLY place they are set.
+# `sentinel.detect.config` gives these types; it has no hidden defaults, so a missing key
+# is an error. Override the path with SENTINEL_DETECTION_CONFIG.
+
+[detector]
+# How far back bronze is read (by event_date partition). Also bounds volume history.
+history_days = 56
+# Two signals are treated as "the same moment" if they are this close. Used when a
+# symptom (a failed task) is attached to its cause, and when a downstream pipeline's
+# problem is linked to an upstream one.
+correlation_tolerance_seconds = 300
+
+[failed_job]
+severity = "high"
+
+[schema_change]
+# Removing or retyping a column breaks readers; adding one usually doesn't.
+removed_or_retyped_severity = "high"
+added_severity = "medium"
+
+[late_data]
+# Severity is "high" once the data is this many SLAs behind (e.g. 2 x 24 h for customers).
+high_severity_multiple = 2.0
+# Arrival checks (pipeline didn't finish by end-of-ds + arrival_sla_hours) only look at
+# business dates this many days back from now.
+arrival_lookback_days = 2
+
+[volume]
+# Robust z-score: (value - median) / (1.4826 * MAD), against a baseline chosen per
+# pipeline (volume_baseline below): the same weekday's history, or the recent days.
+z_threshold = 3.5
+# ...and the change vs the median must also be at least this big (relative). Guards
+# against flagging a statistically "significant" but operationally trivial change when
+# history is very tight.
+min_relative_change = 0.15
+# MAD can be ~0 with a few near-identical points; sigma never drops below this fraction
+# of the median.
+mad_floor_fraction = 0.02
+# Baseline points needed before the robust z-score is used.
+min_baseline_points = 3
+# "recent" baseline: the last N business dates, every weekday.
+recent_days = 7
+# Cold start (fewer baseline points, but some history): flag only changes at least
+# this big vs the median of whatever history exists. Wide on purpose: weekday swings
+# alone reach +-30% in this data.
+cold_start_min_change = 0.5
+# |change| at or above this is "high" severity (else "medium"). Zero rows is always high.
+high_severity_change = 0.5
+
+# --- Per pipeline -------------------------------------------------------------------
+# upstream:        pipelines whose output this one reads (lineage for root-cause linking).
+#                  Must match the DAGs; tests/dags checks it against daily_revenue_agg.
+# final_task:      the task whose success means "this ds is done".
+# volume_metrics:  "<job_name>.<rows_in|rows_out>" from job_metric events.
+# volume_baseline: "same_weekday" for daily flows with a weekly cycle (orders, payments);
+#                  "recent" (last recent_days) for cumulative snapshots that grow
+#                  steadily and have no weekly cycle: a 56-day same-weekday median lags
+#                  a growing table by ~4 weeks of growth, which reads as a spike.
+# freshness:       latest value of `column` must be within max_staleness_hours of the end
+#                  of ds (the same SLA the GX suite enforces, re-checked here from the
+#                  observed value so the detector can report how late).
+# arrival_sla_hours: final_task must succeed by end of ds + this. Omitted = disabled.
+#                  Disabled locally: DAGs have schedule=None and dates are backfilled
+#                  by hand, so "finished N hours after ds" means nothing here. Enable it
+#                  for a scheduled deployment.
+
+[pipelines.orders_ingest]
+upstream = []
+final_task = "validate_orders"
+volume_metrics = ["orders_ingest.rows_in"]
+volume_baseline = "same_weekday"
+freshness = { column = "order_ts", max_staleness_hours = 2 }
+
+[pipelines.customers_dim]
+upstream = []
+final_task = "validate_customers"
+# rows_out is "rows changed by the MERGE" (0 on a re-run), so it is not a volume signal.
+volume_metrics = ["customers_dim.rows_in"]
+volume_baseline = "recent"
+freshness = { column = "updated_at", max_staleness_hours = 24 }
+
+[pipelines.payments_etl]
+upstream = []
+final_task = "validate_payments"
+volume_metrics = ["payments_glue_job.rows_in"]
+volume_baseline = "same_weekday"
+freshness = { column = "paid_ts", max_staleness_hours = 2 }
+
+[pipelines.daily_revenue_agg]
+upstream = ["orders_ingest", "customers_dim", "payments_etl"]
+final_task = "validate_daily_revenue"
+# rows_in = orders joined for the day; rows_out (~18 country x currency groups) is too
+# small and discrete to be a useful volume signal.
+volume_metrics = ["daily_revenue_agg.rows_in"]
+volume_baseline = "same_weekday"

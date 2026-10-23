@@ -1,7 +1,7 @@
 # Architecture
 
-Target architecture across all six phases. Phases 1–2 implement everything up to and
-including the bronze tables.
+Target architecture across all six phases. Phases 1–3 implement everything up to and
+including the incidents table.
 
 ```mermaid
 flowchart LR
@@ -23,8 +23,7 @@ flowchart LR
 
   K --> LAND[Lander<br/>plain consumer]
   LAND --> BRONZE[(Delta bronze<br/>partitioned by date)]
-  K --> DET[Detector service]
-  BRONZE -. history .-> DET
+  BRONZE --> DET[Detector<br/>batch pass over bronze]
   DET --> INC[(Delta silver<br/>incidents)]
   INC --> AGENT[Diagnosis agent<br/>Claude + read-only tools]
   AGENT --> NOTIFY[Notifier<br/>Slack / mock]
@@ -39,7 +38,7 @@ flowchart LR
 
 | # | Decision | Why | Tradeoff |
 |---|---|---|---|
-| 1 | Detector is a plain Python Kafka consumer, not Spark Structured Streaming | Event volume is tiny. Detectors are pure functions, which are easy to unit test and replay. No JVM | No horizontal scale-out; at-least-once delivery with idempotent `event_id`s |
+| 1 | Detector is a plain Python batch job over bronze, not Spark Structured Streaming and not a Kafka consumer (changed in Phase 3; the plan was a Kafka consumer) | Event volume is tiny. Every detector needs history (last good schema, same-weekday medians, earlier attempts), which bronze already holds and a stream would rebuild as state. Pure functions: deterministic, replayable, easy to test. One pass takes about 1.3 s and peaks at about 500 MiB; no JVM | Latency = how often it runs (one-shot `make detect` now; scheduled in Phase 6). Re-reads `history_days` of bronze each pass, which is fine at this volume. At scale: incremental reads by `event_date` plus a state table |
 | 2 | The lander writes Delta through `delta-rs`; Spark only runs inside jobs | No Spark session per micro-batch. The tables are still real Delta | Two Delta writers. Protocol compatibility is verified by tests (GX reads Spark-written tables through delta-rs) |
 | 3 | PySpark in local mode inside the Airflow image; the `spark` pool caps concurrent JVMs at 2 | Fits an 8 GB Docker budget (measured peak 4.2 GB), and there's no cross-container submit | Not distributed locally. The job code is unchanged on a cluster or on Glue |
 | 4 | Glue job via the `glue_compat` shim | LocalStack Glue is paid; the same script runs on real Glue | DynamicFrames, bookmarks and the catalog aren't exercised locally |
@@ -62,3 +61,10 @@ flowchart LR
 | 21 | Bronze partitioned by emitted date, queried by `logical_date` | Emitted date is when something *happened* (retention, time-range scans); ds is the business date the run was for, and a backfill emits today for an old ds | Two dates to keep straight; `make query-bronze` filters on ds |
 | 22 | Code version = content hash of each pipeline's files, recorded by `make deploy` | Uncommitted edits (Phase 5 "bad deploy" faults) are versioned too; a shared-module change correctly redeploys every pipeline | Deploys are explicit (`make deploy`), not inferred from Airflow; on AWS this would run in CI/CD |
 | 23 | The lander uses static group membership (`group.instance.id`) | After a broker restart, Redpanda restores the old member, and a plain rejoin waited about 30 s for it to expire. A static member replaces it immediately (measured 30 s → 2 s) | Only one process per instance id; a second lander or a `--drain` run needs its own `--instance-id` |
+| 24 | Detection reads only bronze | One source of truth that the lander already made idempotent. Detection can be replayed from bronze alone, and it can't be confused by curated tables that a re-run has overwritten | Signals not in events (e.g. table sizes, file arrival times) need a producer first |
+| 25 | All thresholds in `config/detection.toml`; every key required, no defaults in code | What you read is what runs. Tests override by deep-merge | Adding a setting means editing the file (a missing key is an error by design) |
+| 26 | Volume: robust z (median/MAD) against a per-pipeline baseline (same weekday, or the last 7 days for a growing snapshot), AND a 15% relative-change floor | Median/MAD isn't skewed by past incidents. Same weekday removes the weekly cycle. The floor stops tight history from flagging 7–11% moves (9 clean days a year had \|z\| > 3.5). "recent" stops a growing table looking like a spike (5 clean days a year, found by a full-year replay) | No trend or holiday model. Needs about 3 weeks of runs before z is used; until then only ≥ 50% changes are caught |
+| 27 | Freshness is recomputed from GX's observed max, not taken from GX pass/fail | Gives *how* late (severity, and diagnosis in Phase 4). The SLA lives in one file | The GX suite and the config must agree on the SLA (both 24 h for customers) |
+| 28 | Correlation: a cause absorbs same-run symptoms; downstream links to upstream by config lineage and timing; the upstream is primary; downstream keeps its own row | One incident per root cause. A linked downstream still resolves (and can be investigated) on its own, so an independent downstream problem never disappears | Lineage is declared, not discovered. A DAG test keeps it in sync with the sensors |
+| 29 | Dedup key `pipeline\|type\|fingerprint`; `incident_id = sha256(key)[:10]`; no time window | Stable ids across re-runs, replays and machines; a recurring break collects every affected ds | A recurrence weeks later reopens the old incident instead of opening a new one (open question for Phase 4) |
+| 30 | Idempotent upsert: MERGE only rows whose content changed | Re-running detection writes nothing, so Delta history shows real changes only | A full read of the (small) incidents table per pass |

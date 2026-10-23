@@ -4,13 +4,16 @@ have the expected shape."""
 from __future__ import annotations
 
 import itertools
+import tomllib
 from pathlib import Path
 
 import pytest
 from airflow.models import DagBag
 from airflow.sensors.external_task import ExternalTaskSensor
 
-DAGS_DIR = Path(__file__).resolve().parents[2] / "pipelines" / "dags"
+ROOT = Path(__file__).resolve().parents[2]
+DAGS_DIR = ROOT / "pipelines" / "dags"
+DETECTION_CONFIG = ROOT / "config" / "detection.toml"
 
 EXPECTED = {
     "orders_ingest": ["generate_orders", "ingest_orders", "validate_orders"],
@@ -92,3 +95,19 @@ def _as_list(callbacks) -> list:
     if callbacks is None:
         return []
     return list(callbacks) if isinstance(callbacks, list | tuple) else [callbacks]
+
+
+def test_detection_config_lineage_matches_the_dags(dagbag) -> None:
+    """Root-cause linking in sentinel.detect trusts config `upstream`; it must be exactly
+    the DAGs each pipeline's sensors wait on, and `final_task` the DAG's last task."""
+    with DETECTION_CONFIG.open("rb") as fh:
+        pipelines = tomllib.load(fh)["pipelines"]
+    assert set(pipelines) == set(dagbag.dag_ids)
+    for dag_id, dag in dagbag.dags.items():
+        sensors = [t for t in dag.tasks if isinstance(t, ExternalTaskSensor)]
+        assert sorted(pipelines[dag_id]["upstream"]) == sorted(
+            s.external_dag_id for s in sensors
+        ), dag_id
+        assert [t.task_id for t in dag.leaves] == [pipelines[dag_id]["final_task"]], dag_id
+        for s in sensors:  # a sensor waits on the upstream's final task
+            assert s.external_task_id == pipelines[s.external_dag_id]["final_task"]

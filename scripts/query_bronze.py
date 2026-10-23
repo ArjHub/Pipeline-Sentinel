@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from deltalake import DeltaTable
 
+from sentinel.cli import exit_now
 from sentinel.lander.bronze import DEAD_LETTER, TOPICS, bronze_root
 
 SAMPLES = 3
@@ -96,4 +97,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     os.environ.setdefault("SENTINEL_LAKE_ROOT", "data/lake")
-    sys.exit(main())
+    exit_now(main())
