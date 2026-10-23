@@ -13,7 +13,7 @@ A self-diagnosing data pipeline platform. It monitors batch pipelines, detects f
 and data drift, and uses an LLM to explain the likely root cause and suggest a fix. A
 human then approves any retry from Slack.
 
-> **Status: Phase 3 of 6 (detection).** Each phase lands as its own commit and tag.
+> **Status: Phase 4 of 6 (diagnosis agent and Slack).** Each phase lands as its own commit and tag.
 > Sections marked *(Phase N)* describe work that hasn't been built yet.
 
 | Phase | Scope | State |
@@ -21,7 +21,7 @@ human then approves any retry from Slack.
 | 1 | Pipelines to monitor: 4 DAGs, Spark + Glue-shim jobs, GX suites, structured events | ✅ done |
 | 2 | Event stream: Redpanda producers, Delta bronze lander, deploy events, replay | ✅ done |
 | 3 | Detection: failed jobs, schema drift, late data, volume anomalies, suppression | ✅ done |
-| 4 | Diagnosis agent (Claude, tool use) + Slack Block Kit + FastAPI retry endpoint | ⏳ |
+| 4 | Diagnosis agent (Claude, tool use) + Slack Block Kit + FastAPI retry endpoint | ✅ done |
 | 5 | Benchmark: 30 labelled faults, accuracy/latency/cost, manual baseline | ⏳ |
 | 6 | Terraform (plan only), CI, Grafana dashboard, final docs | ⏳ |
 
@@ -42,8 +42,8 @@ Nothing here comes from any employer, client, or real person. Emails look like
 | Kafka API (Redpanda v26) | **Real** | Jobs, Airflow callbacks, GX and the deploy recorder publish; the lander consumes into Delta bronze |
 | Detection (4 detectors + correlation → Delta `incidents`) | **Real** | Batch pass over bronze every 60 s (`sentinel-detector` service), or once with `make detect` |
 | Prometheus + Grafana + statsd-exporter | **Real** | Airflow metrics scraped; dashboard comes in Phase 6 |
-| Claude diagnosis agent *(Phase 4)* | **Real API** if `ANTHROPIC_API_KEY` is set; a fake LLM in tests | Hard budget cap, enforced by a cost ledger |
-| Slack *(Phase 4)* | **Mocked**: local mock-Slack page + signed requests to the real FastAPI handler | A real-Slack setup guide will be provided; not tested against real Slack |
+| Claude diagnosis agent | **Real API** (Haiku 5.5 default, Sonnet 5.5 via `SENTINEL_MODEL`) if `ANTHROPIC_API_KEY` is set. Tests use a scripted fake; demos without a key use a **labelled rule-based mock** (`mock-rule-based`, $0) | $10 hard cap: `benchmark/results/ledger.json` records every real call, and a diagnosis is refused if spent + worst case > $10 |
+| Slack | **Mocked**: http://localhost:8000/mock-slack records messages; its buttons send *signed* Slack-format requests to the real FastAPI handler | Real Slack (`chat.postMessage` + interactivity) is implemented and unit-tested against a local fake, **not against real Slack**. Setup: [docs/slack-setup.md](docs/slack-setup.md) |
 | AWS (S3, Glue, ECS/EC2 Airflow, single-node Kafka, IAM) *(Phase 6)* | **`terraform plan` only** | Never applied. No AWS resources are created by this project |
 
 ## Quickstart
@@ -58,6 +58,8 @@ make query     # row counts in the curated Delta tables + events emitted for tha
 make query-bronze  # bronze event tables (row counts + samples) for that date
 make detect    # run detection once over bronze; upsert the incidents table
 make query-incidents  # list incidents (STATUS=open, ID=INC-... for full evidence)
+make diagnose INCIDENT=INC-...   # diagnose one incident (DRY_RUN=1, MOCK=1, MODEL=claude-sonnet-5-5)
+make demo-e2e  # break-it -> detect -> diagnose -> mock Slack -> Retry -> green re-run
 make test      # unit tests (incl. local Spark + GX + Delta) and DAG-integrity tests, in a container
 make test-e2e  # end-to-end: trigger a DAG on the live stack, assert its events land in bronze
 make down      # stop (keeps data);  `make clean` also deletes volumes and the lake
@@ -472,29 +474,226 @@ finished.
   called`. So the validate tasks aren't patched. If a task ever does read that table,
   it must exit through `exit_now`.
 
-## Measured resource use (Phase 3, detector service running)
+## Diagnosis and Slack (Phase 4)
+
+```mermaid
+flowchart LR
+  DET[sentinel-detector<br/>new primary incident] --> W[diagnosis worker<br/>background thread]
+  W --> GATE{ledger:<br/>spent + worst case<br/>&le; $10?}
+  GATE -- no --> R[(diagnoses:<br/>budget_refused)]
+  GATE -- yes --> LOOP[agent loop<br/>Claude + 6 read-only tools]
+  LOOP <--> T[(bronze + incidents)]
+  LOOP --> V{JSON schema +<br/>Pydantic + evidence<br/>quotes verbatim?}
+  V -- "no (retry once)" --> LOOP
+  V --> D[(diagnoses table)]
+  D --> S[Slack Block Kit<br/>mock or real]
+  S -- signed click --> API[sentinel-api<br/>signature, allowlist,<br/>retry_safe gate]
+  API --> AF[Airflow REST<br/>clearTaskInstances]
+  API --> AU[(audit)]
+  AU -. human status .-> DET
+```
+
+Every new **primary** incident is diagnosed automatically by the detector's background
+worker (`SENTINEL_AUTO_DIAGNOSE=0` turns it off). `make diagnose INCIDENT=...` runs the
+same thing by hand. The result goes to the Delta `diagnoses` table and to Slack:
+incident, summary, top cause, confidence, retry-safe, up to three cited pieces of
+evidence, the suggested fix, model, prompt version, tokens and cost, and **Retry DAG** /
+**Dismiss** buttons.
+
+```bash
+make diagnose INCIDENT='INC-c5962d3281#4'               # Claude (needs ANTHROPIC_API_KEY)
+make diagnose INCIDENT='INC-c5962d3281#4' DRY_RUN=1     # budget check + worst case, no API call
+make diagnose INCIDENT='INC-c5962d3281#4' MOCK=1        # rule-based mock, $0
+make diagnose INCIDENT=... MODEL=claude-sonnet-5-5      # or SENTINEL_MODEL in .env
+make query-diagnoses                                     # table + ledger spend; ID=INC-... for JSON
+make test-real-api                                       # 2 real smoke tests (~$0.01), ledger-gated
+open http://localhost:8000/mock-slack                    # the mock Slack
+```
+
+Quote incident ids with a recurrence suffix (`'INC-...#4'`): `#` starts a comment in
+most shells.
+
+After you add `ANTHROPIC_API_KEY` to `.env`, run `docker compose up -d sentinel-detector`.
+Containers read `.env` when they're created.
+
+### The agent
+
+**Tools (read-only, scoped).** `get_error_logs`, `get_schema_diff`, `get_recent_deploys`,
+`get_upstream_status`, `get_metric_history`, `get_dq_failures`. They read bronze and
+the incidents table, nothing else.
+- **Scope:** each defaults to the incident's pipeline and latest affected ds. It
+  accepts another configured pipeline (e.g. an upstream) and a ds within 7 days, and
+  refuses anything else with an error result.
+- **Output:** JSON with the pipeline-derived data under `untrusted_data`, redacted and
+  capped at 8,000 characters. Items are dropped, never cut mid-JSON.
+
+**Output.** `output_config.format` constrains the final answer to a JSON schema. Pydantic
+then validates it:
+- **Fields:** a ranked list (1–5) of root causes, each with `category` (`schema_drift
+  | late_data | oom | bad_deploy | upstream_outage | data_quality | unknown`),
+  `confidence` 0–1, `evidence` (kind, source tool, **verbatim quote**),
+  `suggested_fix`, and `retry_safe` with a reason.
+- **Evidence:** every quote must appear in what the tools actually returned, so the
+  model can't invent a log line or a SHA.
+- **Malformed:** one retry with the validation errors. After that the diagnosis is
+  stored as `unknown`.
+
+**Guardrails** (all in `config/diagnosis.toml`):
+
+| Guardrail | Setting |
+|---|---|
+| Budget gate | refuse if ledger spent + worst case × 1.25 > $10. Haiku worst case ≈ $0.024 per diagnosis, Sonnet ≈ $0.48 |
+| Per-diagnosis caps | 10 LLM calls, 8 tool calls, 90K billed input tokens (stays under Haiku's 100K price tier), 16K output tokens; 4,096 per call |
+| Tool budget spent | `tool_choice: none`, the model must answer |
+| Redaction + truncation | before anything reaches the model, the incident record included |
+| Prompt injection | tool output is data inside `tool_result` JSON, the system prompt says so and never changes, only the 6 read-only tools exist, unknown tool names are refused, and nothing the model outputs is executed |
+| Refusal (`stop_reason: refusal`) | stored as `unknown` (Haiku 5.5 has no server-side fallback) |
+| Prompt | `prompts/diagnosis_v1.md`, version + SHA-256 stored with every diagnosis |
+
+**Cost.** Prices are from the
+[pricing page](https://platform.claude.com/docs/en/about-claude/pricing), read on
+2026-10-23 (per MTok):
+
+| Model | Input | 5m cache write | Cache read | Output |
+|---|---|---|---|---|
+| Haiku 5.5 (prompt ≤ 100K) | $0.10 | $0.125 | $0.01 | $0.50 |
+| Haiku 5.5 (prompt > 100K) | $0.50 | $0.625 | $0.05 | $2.50 |
+| Sonnet 5.5 | $2.00 | $2.50 | $0.10 | $10.00 |
+
+Every request's real `usage` (input, output, cache write, cache read) is priced and
+appended to the ledger, and the per-diagnosis total is in the `diagnoses` table and
+the log line. **No real diagnoses have been run yet**: `ANTHROPIC_API_KEY` was empty in
+this environment, so the ledger has $0 spent. `make test-real-api` and `make diagnose`
+produce the first real numbers.
+
+### Slack and retry
+
+The `sentinel-api` service (FastAPI, http://localhost:8000) handles
+`POST /slack/interactions`:
+
+1. Checks the Slack signature, the timestamp (within 300 s) and that the signature
+   hasn't been used before. If not, it returns 401 and audits the request.
+2. Re-reads the incident and its latest diagnosis from the lake. The button value is
+   only an id.
+3. Retry targets are the incident's DAG plus the DAGs of its open downstream
+   incidents. They must all be in `allowed_dags`.
+4. **Retry is refused when `retry_safe` is false**, or when there is no diagnosis. The
+   reply offers **"I fixed it, retry anyway"** (`retry_confirmed`), an explicit
+   override that is recorded as such.
+5. On accept it calls Airflow `clearTaskInstances(only_failed)` per target run and
+   sets the status to `retrying`. Dismiss sets `dismissed`.
+6. It writes an audit row (actor, action, decision, reason, targets, diagnosis id,
+   retry_safe) for every request.
+
+Human statuses come from the audit log. The detector overlays them on every pass:
+- `dismissed` sticks.
+- `retrying` becomes `resolved` once the re-run is clean, or `open` again if a new
+  failure lands after the retry.
+
+### End-to-end demo
+
+`make demo-e2e` (pick an unused date with `DEMO_DATE=`). Measured on the live stack
+(2026-10-23), with the **mock** diagnosis because no key was set:
+
+```
+=== 1. inject missing_amount for ds=2026-10-05            orders_ingest failed, daily_revenue_agg failed
+=== 2. wait for sentinel-detector ...                      INC-c5962d3281#4  schema_change ... -amount
+=== 3. diagnosis                                           mock-rule-based top=schema_drift conf=0.9 retry_safe=False
+=== 4. mock Slack message                                  buttons: ['retry', 'dismiss']
+=== 5. operator fixes the input                            orders file restored
+=== 6. click Retry DAG                                     refused: retry_safe=false: The input file is still missing ...
+=== 7. click 'I fixed it, retry anyway'                    accepted: cleared failed tasks: orders_ingest/run_all__2026-10-05,
+                                                                     daily_revenue_agg/run_all__2026-10-05 (confirmed ...)
+=== 8. wait for the re-run ...                             {'orders_ingest': 'success', 'daily_revenue_agg': 'success'}
+                                                           INC-c5962d3281#4: resolved
+DEMO PASSED in 215s
+```
+
+With a key set, step 3 is Claude via the detector's worker. Without one, the worker
+posts the incident with "no diagnosis" and the demo then adds the mock diagnosis (two
+Slack messages). Set `SENTINEL_LLM=mock` in `.env` to have the worker use the mock.
+
+### Design decisions (Phase 4)
+
+- **Tools instead of one big prompt.** One prompt would need every log line, schema,
+  deploy and metric of every pipeline for the window. That's thousands of lines,
+  mostly irrelevant, paid for on every diagnosis, and the noise hurts the answer. With
+  tools the model reads only what its hypothesis needs: a schema
+  incident checks the diff and the error log, a volume one the metric history. Each
+  tool is scoped, redacted and size-capped in code. The tool trace is stored
+  (`tools_used`), so you can see what a diagnosis was based on.
+- **Structured output and "unknown".** The output drives a button: `retry_safe` gates
+  an Airflow action and `category` feeds the Phase 5 benchmark. So it must be
+  machine-checkable: schema-constrained, then validated, with every quote checked
+  against tool output. "Unknown" is a valid, preferred answer when the evidence is
+  thin. A confident wrong root cause sends a person down the wrong path and could make
+  a retry look safe. An honest "unknown" costs them a manual look.
+- **The model never acts.** It has no tool that changes anything, and its output is
+  data that a human reads. The only path to Airflow is a signed Slack click, checked
+  against the allowlist and the retry-safe gate, and audited. So a prompt injection in
+  a log line, or a plain model mistake, can at worst produce a wrong diagnosis. It
+  can't run, retry or delete anything. `retry_safe` is advisory in one direction only:
+  it can block a retry, and only a human can override that.
+- **Manual loop, not the SDK's tool runner.** The tool runner is beta. The manual loop
+  puts the budget gate, the per-call ledger record, the caps and the validation retry
+  in one tested place, behind a 3-method interface the fakes implement.
+- **Haiku by default.** Diagnosis here is mostly "read the error, check the diff". The
+  Phase 5 benchmark measures whether Sonnet is worth 20× the price.
+
+### Tests (Phase 4)
+
+| Test file | What it proves |
+|---|---|
+| `test_diagnose_agent.py` | Tools then a valid answer (one user message with all tool results, structured output, caching, the versioned prompt, per-call ledger records). Malformed then retry; malformed twice → `unknown`. Invented evidence rejected; `unknown` accepted; wrong incident id. Refusal; tool-call, LLM-call and token caps; budget refusal with **zero** requests sent; dry run. A non-existent action tool refused. **Prompt injection** in a log line stays inside a `tool_result`, the system prompt never changes, the requested action doesn't exist, and the "obeying" answer fails evidence validation. The API key never appears in logs, the ledger or requests |
+| `test_diagnose_schema.py` | Good / 10 kinds of malformed / `unknown` / verbatim-evidence check / JSON schema matches the model |
+| `test_diagnose_redact.py` | 10 secret and PII patterns, untouched normal lines, truncation keeps the tail, redact-before-truncate |
+| `test_diagnose_tools.py` | All six tools on a real temp lake, scoping refusals, redaction in tool output, size cap keeps valid JSON |
+| `test_diagnose_pricing_ledger.py` | Real prices, Haiku's 100K tier (cache tokens count), worst case, ledger refusal, 4 concurrent writers |
+| `test_diagnose_run.py` | Stored row (model, prompt version + SHA, tokens, cost, latency), Block Kit content, no-LLM path, labelled mock, CLI (dry run / no key / mock), background worker |
+| `test_real_clients_offline.py` | The **real** anthropic SDK against a local fake Messages API: request shape, thinking-block signature and tool_use round-tripped, usage → ledger, error mapping. Real Slack client against a fake: post, errors, `response_url` host guard |
+| `test_slack_signing.py` | Slack's published test vector; valid / tampered / wrong secret / stale / future / missing / **replayed** |
+| `test_actions.py` | Retry-safe gate (refused + confirm button), confirmed retry clears primary + downstream, allowlist, dismiss survives a detection pass, downstream / unknown / missing refused, Airflow failure audited, every click audited, retrying → resolved/open |
+| `test_api.py` | Over HTTP: signed click handled; unsigned / wrong / stale / replayed → 401 + audit; the mock-Slack click goes through the signed handler; metrics |
+| `test_airflow_client.py` | Phase 1 gap: every client method against a stateful **fake Airflow server** (auth, 404, 409, clear only failed), plus a Slack retry reaching Airflow over HTTP |
+| `test_diagnose_real_api.py` | **Real API** (skipped without a key): a real missing_amount diagnosis, and a real injection attempt |
+
+### Known limitations (Phase 4)
+
+- **No real diagnosis measured yet** (no key in this environment). Accuracy, latency and
+  cost on real faults are Phase 5's benchmark.
+- **The replay cache is in memory.** A restarted API forgets signatures it has seen.
+  The 5-minute timestamp window still applies.
+- **Real Slack is untested**, see [docs/slack-setup.md](docs/slack-setup.md).
+- **Retry clears failed tasks of the affected runs only.** A fix that needs a
+  regenerated input (like `missing_amount`) must happen before the click. The gate
+  makes you confirm that.
+- **One diagnosis at a time**, in the detector process. A burst of incidents queues up.
+
+## Measured resource use (Phase 4)
 
 Measured on 2026-10-23 on an Apple Silicon MacBook (16 GB). Docker Desktop is set to
-8 GB (`memoryMiB: 8192`, swap 1 GB; the VM reports 7.75 GiB usable). All nine services
-were up, including `sentinel-detector` passing every 60 s. `make mem-profile
-DATE=2026-10-12` samples `docker stats` every 2 s during `make run-all`:
+8 GB (`memoryMiB: 8192`, swap 1 GB; the VM reports 7.75 GiB usable). All ten services
+were up, including `sentinel-detector` (passing every 60 s, auto-diagnosis on) and
+`sentinel-api`. `make mem-profile DATE=2026-10-05` samples `docker stats` every 2 s
+during `make run-all`:
 
 | Container | Idle MiB | Peak MiB |
 |---|---:|---:|
-| airflow-scheduler (runs the Spark JVMs) | 731 | 2,660 |
-| airflow-webserver | 1,194 | 1,360 |
-| sentinel-detector | 497 | 595 |
-| sentinel-lander | 185 | 479 |
-| redpanda | 308 | 317 |
-| grafana | 224 | 224 |
-| postgres | 78 | 83 |
-| prometheus | 63 | 65 |
-| statsd-exporter | 41 | 42 |
-| **Total** (idle sum / highest simultaneous total) | **3,323** | **5,265** |
+| airflow-scheduler (runs the Spark JVMs) | 491 | 2,441 |
+| airflow-webserver | 1,346 | 1,386 |
+| sentinel-detector (+ diagnosis worker) | 482 | 534 |
+| sentinel-lander | 332 | 479 |
+| sentinel-api | 230 | 230 |
+| grafana | 207 | 207 |
+| redpanda | 165 | 184 |
+| prometheus | 68 | 68 |
+| postgres | 45 | 49 |
+| statsd-exporter | 33 | 34 |
+| **Total** (idle sum / highest simultaneous total) | **3,398** | **5,407** |
 
-- **The detector service adds about 500–600 MiB**, all of it resident between passes.
-  The stack's peak went from 4,502 MiB (Phase 3, no service) to 5,265 MiB: **66% of
-  the VM, about 2.6 GiB headroom**.
+- **5,407 MiB is 68% of the VM, about 2.5 GiB of headroom.** Phase 3 with the detector
+  service peaked at 5,265 MiB. `sentinel-api` adds 230 MiB.
+- **The detector service adds about 500 MiB**, all of it resident between passes.
 - **`make test` is the biggest extra consumer.** It starts a separate `tools` container
   (no memory limit) running local Spark. During the full suite it peaked at 2,048 MiB,
   and the highest simultaneous total was 4,907 MiB, measured *before* the detector
@@ -540,8 +739,14 @@ because sampling `docker stats` every 2 s competes for the same CPU. Each Spark 
   `chmod 600`, and is git-ignored. `.env.example` documents every key.
 - All service ports bind to localhost. Grafana sign-up is disabled, and Airflow's config
   page is hidden.
-- *(Phase 4)* Log redaction before the LLM, Slack signature verification, a DAG
-  allowlist, and an audit log. *(Phase 6)* Least-privilege IAM.
+- The Anthropic key and Slack secrets come from `.env` and are passed through to the
+  containers that need them. They are never logged, stored in the ledger or the
+  diagnoses table, or sent to the model (a test checks logs, ledger and requests).
+- Everything sent to the LLM is redacted first: emails, API keys, tokens, JWTs,
+  `password=`-style values, long hex/base64 blobs. It is also truncated.
+- Slack requests are signature-checked (HMAC, 5-minute window, no replays). Retries
+  are limited to `allowed_dags`, gated on `retry_safe`, and audited, refused ones
+  included. *(Phase 6)* Least-privilege IAM.
 
 ## Repo layout
 
@@ -549,15 +754,21 @@ because sampling `docker stats` every 2 s competes for the same CPU. Each Spark 
 pipelines/   dags/ jobs/ generators/ quality/ common/   # the pipelines being monitored
 src/sentinel/ events/ (models, sinks, replay, schema) instrumentation/ (job wrapper, logging,
              airflow_callbacks) lander/ (bronze writer, consume loop) deploy.py airflow_client.py
-             detect/ (config, observations, four detectors, correlate, store) cli.py
+             detect/ (config, observations, four detectors, correlate, store, service)
+             diagnose/ (agent, tools, llm, schema, redact, pricing, ledger, store)
+             notify/ (Block Kit, mock + real Slack) actions/ (handler, audit) api/ (FastAPI,
+             signing) cli.py
+prompts/     diagnosis_v1.md                            # versioned system prompt
+benchmark/   results/ledger.json                        # every real LLM call and its cost
 schemas/     event.schema.json                          # generated contract (make schemas)
 docker/      airflow/Dockerfile
 observability/ prometheus/ statsd/ grafana/
-config/      detection.toml                             # every detection threshold
+config/      detection.toml diagnosis.toml              # every threshold, cap and allowlist
 scripts/     run_all.py query_lake.py query_bronze.py query_incidents.py break_it.sh
+             query_diagnoses.py demo_e2e.py lake_json.py
              init_env.sh wait_healthy.sh mem_profile.sh create_topics.sh
 tests/       unit/ dags/ integration/
-docs/        architecture.md
+docs/        architecture.md slack-setup.md
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the full target architecture and

@@ -12,6 +12,12 @@ An incident that a later run no longer derives is marked `superseded`:
     (`window_start`), i.e. detection re-derived that period and it is no longer there
     (for example a downstream incident whose root became a recurrence #2). A resolved
     incident that merely aged out of the window is history and is left alone.
+
+Human states come from the audit log (sentinel.actions.audit.human_states), passed in
+as `human`, and are overlaid on the derived status:
+  dismissed  stays dismissed (a recurrence is a new #n incident anyway)
+  retrying   -> resolved once the signals clear; -> open if a new failure was seen
+             after the retry was requested; otherwise stays retrying
 """
 
 from __future__ import annotations
@@ -96,15 +102,37 @@ def read_incidents(path: Path) -> list[dict[str, Any]]:
     return DeltaTable(str(path)).to_pyarrow_table().to_pylist()
 
 
+HUMAN_STATUSES = ("dismissed", "retrying")
+
+
+def overlay(derived: str, last_seen: datetime, human: tuple[str, datetime] | None) -> str:
+    if human is None:
+        return derived
+    status, at = human
+    if status == "dismissed":
+        return "dismissed"
+    if status == "retrying":
+        if derived == "resolved":
+            return "resolved"
+        return "open" if last_seen > at else "retrying"
+    return derived
+
+
 def upsert(
-    path: Path, incidents: list[Incident], now: datetime, window_start: datetime | None = None
+    path: Path,
+    incidents: list[Incident],
+    now: datetime,
+    window_start: datetime | None = None,
+    human: dict[str, tuple[str, datetime]] | None = None,
 ) -> UpsertResult:
     existing = {r["dedup_key"]: r for r in read_incidents(path)}
     result = UpsertResult()
     changed: list[dict[str, Any]] = []
 
+    human = human or {}
     for inc in incidents:
         row = to_row(inc)
+        row["status"] = overlay(inc.status, inc.last_seen, human.get(inc.incident_id))
         old = existing.get(inc.dedup_key)
         if old is None:
             changed.append({**row, "detected_at": now, "updated_at": now})
@@ -121,6 +149,8 @@ def upsert(
     for key, old in existing.items():
         if key in derived:
             continue
+        if old["status"] in HUMAN_STATUSES:
+            continue  # a human decided about it; never silently supersede that
         rederived = window_start is not None and old["last_seen"] >= window_start
         if old["status"] == "open" or (old["status"] == "resolved" and rederived):
             changed.append({**old, "status": "superseded", "updated_at": now})
@@ -140,3 +170,27 @@ def upsert(
                 .execute()
             )
     return result
+
+
+def set_status(path: Path, incident_id: str, status: str, now: datetime) -> bool:
+    """Set one incident's status right away (the API, after an accepted action). The
+    next detection pass derives the same status from the audit log."""
+    if not DeltaTable.is_deltatable(str(path)):
+        return False
+    res = (
+        DeltaTable(str(path))
+        .merge(
+            pa.Table.from_pylist(
+                [{"incident_id": incident_id, "status": status, "updated_at": now}],
+                schema=pa.schema(
+                    [INCIDENT_SCHEMA.field(n) for n in ("incident_id", "status", "updated_at")]
+                ),
+            ),
+            "t.incident_id = s.incident_id",
+            source_alias="s",
+            target_alias="t",
+        )
+        .when_matched_update({"status": "s.status", "updated_at": "s.updated_at"})
+        .execute()
+    )
+    return res.get("num_target_rows_updated", 0) > 0

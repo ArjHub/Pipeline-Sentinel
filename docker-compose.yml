@@ -225,6 +225,14 @@ services:
       SENTINEL_LAKE_ROOT: /opt/sentinel/data/lake
       SENTINEL_DETECT_INTERVAL_S: ${SENTINEL_DETECT_INTERVAL_S:-60}
       METRICS_PORT: "9109"
+      # Diagnosis of new primary incidents (Phase 4). The key is passed through from
+      # .env and never logged; empty = no diagnosis unless SENTINEL_LLM=mock.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SENTINEL_MODEL: ${SENTINEL_MODEL:-claude-haiku-5-5}
+      SENTINEL_LLM: ${SENTINEL_LLM:-auto}
+      SENTINEL_AUTO_DIAGNOSE: ${SENTINEL_AUTO_DIAGNOSE:-1}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_CHANNEL: ${SLACK_CHANNEL:-}
     volumes:
       - ./:/opt/sentinel
     depends_on:
@@ -236,6 +244,37 @@ services:
       retries: 12
       start_period: 15s
     mem_limit: 768m
+    restart: unless-stopped
+
+  sentinel-api:
+    # Slack interactivity endpoint + the local mock Slack page (http://localhost:8000).
+    image: pipeline-sentinel/airflow:${IMAGE_TAG:-dev}
+    user: "${AIRFLOW_UID:-50000}:0"
+    entrypoint: ["/opt/venv/jobs/bin/python", "-m", "uvicorn", "--factory",
+                 "sentinel.api.app:app_from_env", "--host", "0.0.0.0", "--port", "8000",
+                 "--no-access-log"]
+    environment:
+      PYTHONPATH: /opt/sentinel:/opt/sentinel/src
+      SENTINEL_LAKE_ROOT: /opt/sentinel/data/lake
+      AIRFLOW_API_URL: http://airflow-webserver:8080
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:?set in .env}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set in .env}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_CHANNEL: ${SLACK_CHANNEL:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./:/opt/sentinel
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "-o", "/dev/null", "http://localhost:8000/healthz"]
+      interval: 10s
+      retries: 12
+      start_period: 10s
+    mem_limit: 384m
     restart: unless-stopped
 
   # One-off container for tests and lint (`make test`, `make lint`). Not started by `up`.

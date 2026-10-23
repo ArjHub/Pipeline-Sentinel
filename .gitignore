@@ -19,3 +19,6 @@ derby.log
 *.tfstate
 *.tfstate.*
 *.tfplan
+# LLM ledger lock/temp files (the ledger itself is committed: it is the spend record)
+benchmark/results/*.lock
+benchmark/results/*.tmp

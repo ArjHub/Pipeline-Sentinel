@@ -1,0 +1,38 @@
+# PipelineSentinel diagnosis agent + actions. Every key required (no defaults in code).
+# Override the path with SENTINEL_DIAGNOSIS_CONFIG.
+
+[agent]
+# Default model; SENTINEL_MODEL overrides (e.g. claude-sonnet-5-5).
+model = "claude-haiku-5-5"
+prompt_file = "prompts/diagnosis_v1.md"
+# output_config.effort (low | medium | high | xhigh | max).
+effort = "medium"
+# Per request.
+max_tokens_per_call = 4096
+# Per diagnosis, all requests together (the malformed-output retry included).
+max_llm_calls = 10
+max_tool_calls = 8
+# Billed input (uncached + cache writes + cache reads). Below 100K so every Haiku 5.5
+# request stays in its standard price tier.
+max_input_tokens = 90000
+max_output_tokens = 16000      # includes thinking tokens
+# One retry when the final answer is malformed or cites evidence no tool returned.
+malformed_retries = 1
+
+[tools]
+ds_window_days = 7
+max_items = 20
+item_max_chars = 600
+traceback_max_chars = 1500
+output_max_chars = 8000
+incident_evidence_max_chars = 6000
+
+[budget]
+# The hard cap for ALL LLM spend in this project (diagnoses + Phase 5 benchmark + judge).
+total_usd = 10.0
+
+[actions]
+# DAGs a Slack button may clear. Anything else is refused and audited.
+allowed_dags = ["orders_ingest", "customers_dim", "payments_etl", "daily_revenue_agg"]
+# Slack request timestamps older than this are refused (replay protection).
+signature_max_age_seconds = 300

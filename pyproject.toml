@@ -25,6 +25,7 @@ pythonpath = [".", "src"]
 markers = [
     "spark: needs a local SparkSession (Java + pyspark)",
     "integration: needs the docker compose stack running",
+    "real_api: calls the real Claude API (skipped without ANTHROPIC_API_KEY; ledger-gated)",
 ]
 addopts = "-ra"
 filterwarnings = ["ignore::DeprecationWarning"]

@@ -15,8 +15,8 @@ export
 
 .DEFAULT_GOAL := help
 .PHONY: help env build up down clean ps logs deploy run-all query query-bronze replay-events land \
-	detect query-incidents break-it \
-	schemas test test-unit test-dags test-e2e lint fmt lock mem mem-profile
+	detect query-incidents break-it diagnose query-diagnoses demo-e2e \
+	schemas test test-unit test-dags test-e2e test-real-api lint fmt lock mem mem-profile
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -71,6 +71,17 @@ query-incidents: ## List incidents (STATUS=open|resolved|superseded, ID=INC-... 
 	$(COMPOSE) exec airflow-scheduler $(JOBS_PY) scripts/query_incidents.py \
 	  $(if $(STATUS),--status $(STATUS)) $(if $(ID),--id $(ID))
 
+diagnose: ## Diagnose one incident: INCIDENT=INC-... [MODEL=claude-sonnet-5-5] [DRY_RUN=1] [MOCK=1]
+	$(COMPOSE) exec -e SENTINEL_MODEL=$(or $(MODEL),$(SENTINEL_MODEL),claude-haiku-5-5) \
+	  sentinel-detector $(JOBS_PY) -m sentinel.diagnose --incident '$(INCIDENT)' \
+	  $(if $(DRY_RUN),--dry-run) $(if $(MOCK),--mock)
+
+query-diagnoses: ## Diagnoses table + ledger spend (ID=INC-... for the full JSON)
+	$(COMPOSE) exec sentinel-detector $(JOBS_PY) scripts/query_diagnoses.py $(if $(ID),--id '$(ID)')
+
+demo-e2e: ## break-it -> detect -> diagnose -> mock Slack -> Retry click -> green re-run (DATE=)
+	python3 scripts/demo_e2e.py --date $(or $(DEMO_DATE),2026-10-05)
+
 break-it: ## Inject a fault on the live stack: FAULT=missing_amount|volume_drop|stale_customers DATE=
 	bash scripts/break_it.sh $(FAULT) $(DATE)
 
@@ -85,6 +96,10 @@ test-unit: ## Unit tests (generators, jobs on local Spark, GX suites, events)
 test-dags: ## DAG integrity tests with Airflow's own interpreter
 	$(COMPOSE) run --rm tools "python -m pytest tests/dags -q -p no:cacheprovider"
 
+test-real-api: ## Smoke tests against the REAL Claude API (needs ANTHROPIC_API_KEY; ledger-gated, ~$0.01)
+	$(COMPOSE) run --rm -e ANTHROPIC_API_KEY -e SENTINEL_MODEL tools \
+	  "$(JOBS_PY) -m pytest tests/unit/test_diagnose_real_api.py -q -s -p no:cacheprovider"
+
 test-e2e: ## End-to-end: run a DAG on the live stack, assert its events land in bronze
 	$(COMPOSE) run --rm tools "$(JOBS_PY) -m pytest tests/integration -q -p no:cacheprovider"
 
@@ -95,11 +110,14 @@ fmt: ## Auto-format with ruff (formats even if lint errors remain; exits non-zer
 	$(COMPOSE) run --rm tools "$(JOBS_PY) -m ruff format . && $(JOBS_PY) -m ruff check --fix .; \
 	  rc=\$$?; $(JOBS_PY) -m ruff format -q .; exit \$$rc"
 
+# Nothing released after this date enters a lockfile (supply-chain: let new releases age).
+LOCK_EXCLUDE_NEWER ?= 2026-10-09T23:59:59Z
+
 lock: ## Re-compile hashed lockfiles (uv, pinned) inside the base image
 	docker run --rm -v "$$PWD/requirements:/req" -w /req --entrypoint bash \
 	  apache/airflow:2.11.2-python3.11 -c "pip install -q uv==0.9.5 && \
-	  python -m uv pip compile jobs.in --python-version 3.11 --python-platform linux --generate-hashes --no-header -o jobs.lock.txt && \
-	  python -m uv pip compile dev.in --python-version 3.11 --python-platform linux --generate-hashes --no-header -o dev.lock.txt"
+	  python -m uv pip compile jobs.in --exclude-newer $(LOCK_EXCLUDE_NEWER) --python-version 3.11 --python-platform linux --generate-hashes --no-header -o jobs.lock.txt && \
+	  python -m uv pip compile dev.in --exclude-newer $(LOCK_EXCLUDE_NEWER) --python-version 3.11 --python-platform linux --generate-hashes --no-header -o dev.lock.txt"
 
 mem: ## Current memory use per container
 	@docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}' $$($(COMPOSE) ps -q)

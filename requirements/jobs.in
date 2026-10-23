@@ -17,3 +17,8 @@ pydantic==2.11.7
 # env (callbacks) and this venv use an identical Kafka client.
 confluent-kafka==2.13.2
 prometheus-client==0.24.1
+# Diagnosis agent + Slack interactivity API (Phase 4). Released >= 2 weeks before
+# pinning; `make lock` also excludes anything newer than LOCK_EXCLUDE_NEWER.
+anthropic==1.13.0
+fastapi==0.143.0
+uvicorn==0.54.0

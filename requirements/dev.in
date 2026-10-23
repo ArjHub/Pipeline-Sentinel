@@ -3,3 +3,5 @@
 pytest==8.4.2
 pytest-cov==7.0.0
 ruff==0.14.2
+# FastAPI's TestClient
+httpx

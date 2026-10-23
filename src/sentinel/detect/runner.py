@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
+from sentinel.actions.audit import human_states
 from sentinel.detect import correlate, load_bronze, run_detectors
 from sentinel.detect.config import DetectionConfig
 from sentinel.detect.correlate import Incident
@@ -37,5 +38,6 @@ def run_once(lake: Path, cfg: DetectionConfig, now: datetime, dry_run: bool = Fa
     written = None
     if not dry_run:
         window_start = datetime.combine(since, time.min, UTC)
-        written = upsert(incidents_path(lake), incidents, now, window_start)
+        human = human_states(lake)
+        written = upsert(incidents_path(lake), incidents, now, window_start, human)
     return PassResult(since, obs, findings, incidents, written)

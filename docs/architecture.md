@@ -1,7 +1,7 @@
 # Architecture
 
-Target architecture across all six phases. Phases 1–3 implement everything up to and
-including the incidents table.
+Target architecture across all six phases. Phases 1–4 implement everything except
+Terraform, CI and the Grafana dashboard (Phase 6).
 
 ```mermaid
 flowchart LR
@@ -69,3 +69,9 @@ flowchart LR
 | 29 | Group key `pipeline\|type\|fingerprint`; occurrences overlapping in time share an incident; a recurrence after resolution is a new `INC-<hash>#n` | Stable ids from bronze alone (no stored counter), and the benchmark can tell repeated injections of the same fault apart | Numbering depends on bronze history. If the first incident ages out of `history_days`, a later recurrence would be numbered from what is still in the window. The ids of rows already stored don't change |
 | 30 | Idempotent upsert: MERGE only rows whose content changed | Re-running detection writes nothing, so Delta history shows real changes only | A full read of the (small) incidents table per pass |
 | 31 | The detector is its own long-running service, not an Airflow DAG | Monitoring must not depend on the scheduler it monitors: a wedged scheduler would otherwise also stop detection. It is a simple loop: a failed pass is logged and counted, and the next pass recomputes everything | About 500 MiB resident for a job that is busy under a second a minute; an extra container to keep healthy (healthcheck + `sentinel_detector_last_success_timestamp`) |
+| 32 | Diagnosis: a manual tool-use loop over 6 scoped, read-only tools, not one big prompt and not the SDK's beta tool runner | The model fetches only what its hypothesis needs; every guardrail (budget gate, per-call ledger, caps, validation retry) sits in one tested loop behind a 3-method client interface | More round trips than a single prompt (each re-reads the conversation, mostly from cache) |
+| 33 | Final answer = JSON schema (`output_config.format`) + Pydantic + "every quote verbatim from a tool result"; `unknown` always valid | The output gates an action and feeds a benchmark, so it must be checkable; invented evidence is caught mechanically | A correct answer with a paraphrased quote is rejected (one retry, then `unknown`) |
+| 34 | The model can't act: no write tools; only a signed, allowlisted, retry-safe-gated, audited human click reaches Airflow | Prompt injection or a model error can at worst produce a wrong diagnosis | One extra human step for every retry, by design |
+| 35 | $10 cap as a ledger file with a worst-case gate before each diagnosis | Spend can't overshoot: a started job's worst case already fit. A file (flock) is shared by the detector, the CLI and the Phase 5 benchmark | Worst case is conservative (×1.25 of the caps at the dearest rates), so the last few cents of budget go unused |
+| 36 | Human incident states live in the audit log and are overlaid by the detector | One source of truth, no second writer racing the detector's MERGE, and every state change has an audit row | Status is eventually consistent: the API sets it at once, and the next detection pass re-derives the same value |
+| 37 | Slack behind a `Notifier` interface; locally a mock whose buttons send **signed** requests to the real handler | The full interaction path (signature, replay, allowlist, gate, audit) runs locally without a Slack workspace | Real Slack is unit-tested against a fake only |

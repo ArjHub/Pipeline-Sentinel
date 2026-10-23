@@ -1,7 +1,9 @@
 """python -m sentinel.detect.service   (the `sentinel-detector` compose service)
 
 Runs one detection pass (runner.run_once) every `--interval` seconds (env
-SENTINEL_DETECT_INTERVAL_S, default 60) until SIGTERM. A failed pass is logged and
+SENTINEL_DETECT_INTERVAL_S, default 60) until SIGTERM. Each new primary incident is
+handed to a background DiagnosisWorker (diagnose -> diagnoses table -> Slack) unless
+SENTINEL_AUTO_DIAGNOSE=0. A failed pass is logged and
 counted, and the loop carries on: a bad pass must not stop detection, and the next pass
 recomputes everything from bronze anyway. `make detect` remains the manual equivalent.
 
@@ -132,8 +134,21 @@ def main(argv: list[str] | None = None) -> int:
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
-    log.info("detecting every %ss over %s", args.interval, args.lake)
-    passes = serve(Path(args.lake), args.config, args.interval, stop)
+    lake = Path(args.lake)
+    worker = None
+    from sentinel.diagnose.run import DiagnosisWorker, auto_diagnose_enabled
+
+    if auto_diagnose_enabled():
+        worker = DiagnosisWorker(lake)
+    log.info(
+        "detecting every %ss over %s; auto-diagnosis %s",
+        args.interval,
+        args.lake,
+        "on" if worker else "off",
+    )
+    passes = serve(lake, args.config, args.interval, stop, worker.submit if worker else None)
+    if worker:
+        worker.shutdown()
     log.info("stopped after %d passes", passes)
     return 0
 
