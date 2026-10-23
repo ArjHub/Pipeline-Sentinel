@@ -9,13 +9,14 @@ from __future__ import annotations
 import argparse
 import os
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sentinel.cli import exit_now
-from sentinel.detect import correlate, load_bronze, load_config, run_detectors
+from sentinel.detect import load_config
 from sentinel.detect.config import config_path
-from sentinel.detect.store import incidents_path, upsert
+from sentinel.detect.runner import run_once
+from sentinel.detect.store import incidents_path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,34 +32,29 @@ def main(argv: list[str] | None = None) -> int:
         now = now.replace(tzinfo=UTC)
     cfg = load_config(args.config)
     lake = Path(args.lake)
-    since = (now - timedelta(days=cfg.history_days)).date()
-
-    obs = load_bronze(lake / "bronze", since)
+    r = run_once(lake, cfg, now, dry_run=args.dry_run)
+    obs, findings, incidents = r.obs, r.findings, r.incidents
     print(f"config: {args.config or config_path()}")
     print(
-        f"bronze since {since}: "
+        f"bronze since {r.since}: "
         + ", ".join(f"{k}={v}" for k, v in sorted(obs.events_read.items()))
         + f"  -> {len(obs.attempts)} task attempts, {len(obs.jobs)} job runs, "
         f"{len(obs.dq)} DQ results"
     )
-    findings = run_detectors(obs, cfg, now)
     by_type = Counter(f.type.value for f in findings)
     print(
         f"findings: {len(findings)} "
         + (f"({', '.join(f'{k}={v}' for k, v in sorted(by_type.items()))})" if findings else "")
     )
-    incidents = correlate(findings, cfg)
     roles = Counter(i.role for i in incidents)
     print(
         f"incidents: {len(incidents)} (primary={roles['primary']}, "
         f"downstream={roles['downstream']})"
     )
-
-    if not args.dry_run:
-        path = incidents_path(lake)
-        res = upsert(path, incidents, now)
+    if r.written:
+        res = r.written
         print(
-            f"written to {path}: new={len(res.new)} updated={len(res.updated)} "
+            f"written to {incidents_path(lake)}: new={len(res.new)} updated={len(res.updated)} "
             f"unchanged={len(res.unchanged)} superseded={len(res.superseded)}"
         )
 

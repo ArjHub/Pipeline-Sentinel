@@ -20,4 +20,8 @@ scrape_configs:
     static_configs:
       - targets: ["sentinel-lander:9108"]
 
-  # Detector, agent and Slack API are added in Phases 3-4.
+  - job_name: sentinel-detector
+    static_configs:
+      - targets: ["sentinel-detector:9109"]
+
+  # Agent and Slack API are added in Phase 4.

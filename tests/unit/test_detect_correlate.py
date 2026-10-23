@@ -120,10 +120,58 @@ def test_transitive_chain_links_to_the_top_root() -> None:
     assert inc["daily_revenue_agg"].root_incident_id == root
 
 
-def test_same_problem_on_two_days_is_one_incident() -> None:
-    [inc] = correlate([F(SC, ds="2026-10-19", cleared=10), F(SC, ds="2026-10-20", at=86400)], CFG)
+def test_same_problem_while_still_open_adds_the_date_to_the_incident() -> None:
+    [inc] = correlate([F(SC, ds="2026-10-19"), F(SC, ds="2026-10-20", at=86400)], CFG)
     assert inc.evidence["affected_ds"] == ["2026-10-19", "2026-10-20"]
-    assert inc.status == "open"  # the second day is still active
+    assert inc.status == "open" and inc.evidence["occurrence_number"] == 1
+
+
+def test_overlapping_occurrences_stay_one_incident() -> None:
+    # Day 2 broke before day 1 was fixed (cleared at 100 000 s): same incident.
+    first = F(SC, ds="2026-10-19", cleared=100_000)
+    [inc] = correlate([first, F(SC, ds="2026-10-20", at=86_400, cleared=100_010)], CFG)
+    assert inc.evidence["occurrence_count"] == 2 and inc.status == "resolved"
+
+
+def test_recurrence_after_resolution_is_a_new_numbered_incident() -> None:
+    fp = "orders_ingest:-amount"
+    one = F(SC, ds="2026-10-19", fp=fp, cleared=10)
+    two = F(SC, ds="2026-10-20", fp=fp, at=86_400, cleared=86_500)
+    three = F(SC, ds="2026-10-16", fp=fp, at=200_000)  # a backfill: earlier ds, later time
+    a, b, c = correlate([three, two, one], CFG)
+    base = "INC-c5962d3281"
+    assert [i.incident_id for i in (a, b, c)] == [base, base + "#2", base + "#3"]
+    assert [i.status for i in (a, b, c)] == ["resolved", "resolved", "open"]
+    assert [i.evidence["affected_ds"] for i in (a, b, c)] == [
+        ["2026-10-19"],
+        ["2026-10-20"],
+        ["2026-10-16"],
+    ]
+    assert (b.evidence["occurrence_number"], b.evidence["previous_incident_id"]) == (2, base)
+    assert c.evidence["previous_incident_id"] == base + "#2"
+    assert len({i.dedup_key for i in (a, b, c)}) == 3  # separate rows in the store
+
+
+def test_downstream_of_a_recurrence_links_to_that_recurrence() -> None:
+    def pair(ds, at, cleared=None):
+        return [
+            F(SC, "orders_ingest", fp="o:-amount", ds=ds, at=at, cleared=cleared),
+            F(
+                FJ,
+                "daily_revenue_agg",
+                task="wait_for_orders_ingest",
+                ds=ds,
+                at=at + 60,
+                cleared=cleared,
+            ),
+        ]
+
+    incs = correlate(pair("2026-10-19", 0, cleared=100) + pair("2026-10-20", 10_000), CFG)
+    roots = [i for i in incs if i.role == "primary"]
+    downs = [i for i in incs if i.role == "downstream"]
+    assert [r.incident_id.endswith("#2") for r in roots] == [False, True]
+    assert sorted(d.root_incident_id for d in downs) == sorted(r.incident_id for r in roots)
+    assert {d.status for d in downs if d.root_incident_id.endswith("#2")} == {"open"}
 
 
 def test_status_resolved_and_severity_is_the_max() -> None:
@@ -139,3 +187,4 @@ def test_unknown_pipeline_is_kept_but_never_linked() -> None:
 def test_incident_id_is_a_stable_hash_of_the_dedup_key() -> None:
     assert incident_id("a|b|c") == incident_id("a|b|c") != incident_id("a|b|d")
     assert incident_id("orders_ingest|schema_change|orders_ingest:-amount") == "INC-c5962d3281"
+    assert incident_id("a|b|c", 2) == incident_id("a|b|c") + "#2"

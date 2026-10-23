@@ -19,12 +19,16 @@ Three steps.
    (`wait_for_<pipeline>`) wins, then the earliest. The rest are recorded as
    `also_caused_by`.
 
-3. Across days: same problem, same incident. Occurrences are grouped by dedup_key
-   = pipeline|type|fingerprint (downstream: <root key> >> pipeline|type|fingerprint).
-   The fingerprint describes *what* broke, not when, so the same broken column
-   tomorrow updates the existing incident instead of opening a new one.
-   incident_id is a hash of dedup_key, so re-running detection over the same bronze
-   always produces the same ids.
+3. Across days: same problem, same incident, while it is still open. Occurrences are
+   grouped by pipeline|type|fingerprint (downstream: <root incident key> >> pipeline|
+   type|fingerprint). The fingerprint describes *what* broke, not when. In time order,
+   an occurrence that starts while an earlier one is still active (or before it
+   cleared) joins that incident and adds its ds. One that starts after every earlier
+   occurrence has cleared is a *recurrence*: a new incident, numbered
+   INC-<hash>#2, #3, ... (the first keeps plain INC-<hash>). The benchmark needs this
+   to tell repeated injections of the same fault apart.
+   incident_id is a hash of the group key plus the number, so re-running detection over
+   the same bronze always produces the same ids.
 
 Status: `open` while any of an incident's signals is still active, else `resolved`.
 """
@@ -89,9 +93,8 @@ class Occurrence:
         return "downstream" if self.root else "primary"
 
     @property
-    def key(self) -> str:
-        local = f"{self.pipeline}|{self.head.type.value}|{self.head.fingerprint}"
-        return f"{self.root.key} >> {local}" if self.root else local
+    def local_key(self) -> str:
+        return f"{self.pipeline}|{self.head.type.value}|{self.head.fingerprint}"
 
 
 @dataclass(frozen=True)
@@ -110,8 +113,14 @@ class Incident:
     evidence: dict[str, Any]
 
 
-def incident_id(dedup_key: str) -> str:
-    return "INC-" + hashlib.sha256(dedup_key.encode()).hexdigest()[:10]
+def incident_id(dedup_key: str, number: int = 1) -> str:
+    """INC-<hash of the group key>, plus #n for the n-th recurrence (n >= 2)."""
+    base = "INC-" + hashlib.sha256(dedup_key.encode()).hexdigest()[:10]
+    return base if number == 1 else f"{base}#{number}"
+
+
+def episode_key(group_key: str, number: int) -> str:
+    return group_key if number == 1 else f"{group_key}#{number}"
 
 
 def explains(cause_first: datetime, cause_cleared: datetime | None, effect: datetime, tol) -> bool:
@@ -196,6 +205,27 @@ def _ds_key(o: Occurrence) -> tuple[str, datetime]:
     return (o.ds, o.first_seen)
 
 
+def _episodes(occs: list[Occurrence]) -> list[list[Occurrence]]:
+    """Split one group into incidents: a new one starts when an occurrence begins after
+    every earlier occurrence has cleared (the previous incident was resolved)."""
+    episodes: list[list[Occurrence]] = []
+    for o in sorted(occs, key=lambda o: (o.first_seen, o.ds)):
+        cur = episodes[-1] if episodes else None
+        if cur is not None and (
+            any(x.active for x in cur) or o.first_seen < max(x.cleared_at for x in cur)
+        ):
+            cur.append(o)
+        else:
+            episodes.append([o])
+    return episodes
+
+
+@dataclass(frozen=True)
+class _Ref:
+    key: str  # dedup_key of the incident (episode)
+    id: str
+
+
 def correlate(findings: list[Finding], cfg: DetectionConfig) -> list[Incident]:
     tol = cfg.correlation_tolerance
     by_run: dict[tuple[str, str], list[Finding]] = defaultdict(list)
@@ -204,39 +234,56 @@ def correlate(findings: list[Finding], cfg: DetectionConfig) -> list[Incident]:
     occurrences = [o for fs in by_run.values() for o in _within_run(fs, tol)]
     _link_downstream(occurrences, cfg, tol)
 
-    groups: dict[str, list[Occurrence]] = defaultdict(list)
-    for o in occurrences:
-        groups[o.key].append(o)
-
-    incidents = []
-    for key, occs in groups.items():
-        occs.sort(key=_ds_key)
-        latest = occs[-1]
-        root_id = incident_id(latest.root.key) if latest.root else None
-        title = latest.head.title
-        if root_id:
-            title = f"[downstream of {root_id}] {title}"
-        incidents.append(
-            Incident(
-                incident_id=incident_id(key),
-                dedup_key=key,
-                pipeline=latest.pipeline,
-                type=latest.head.type.value,
-                severity=max_severity([o.severity for o in occs]),
-                status="open" if any(o.active for o in occs) else "resolved",
-                role=latest.role,
-                root_incident_id=root_id,
-                title=title,
-                first_seen=min(o.first_seen for o in occs),
-                last_seen=max(o.last_seen for o in occs),
-                evidence=_evidence(title, occs),
-            )
-        )
+    # Roots are always primaries (see _link_downstream), so primaries are numbered
+    # first and downstream groups key off their root's incident.
+    ref: dict[int, _Ref] = {}
+    incidents: list[Incident] = []
+    for downstream in (False, True):
+        groups: dict[str, list[Occurrence]] = defaultdict(list)
+        for o in occurrences:
+            if (o.root is not None) == downstream:
+                key = f"{ref[id(o.root)].key} >> {o.local_key}" if downstream else o.local_key
+                groups[key].append(o)
+        for group_key, occs in groups.items():
+            for n, episode in enumerate(_episodes(occs), start=1):
+                r = _Ref(episode_key(group_key, n), incident_id(group_key, n))
+                for o in episode:
+                    ref[id(o)] = r
+                incidents.append(_incident(r, n, episode, ref))
     incidents.sort(key=lambda i: (i.first_seen, i.dedup_key))
     return incidents
 
 
-def _evidence(title: str, occs: list[Occurrence]) -> dict[str, Any]:
+def _incident(r: _Ref, number: int, occs: list[Occurrence], ref: dict[int, _Ref]) -> Incident:
+    occs = sorted(occs, key=_ds_key)
+    latest = occs[-1]
+    root_id = ref[id(latest.root)].id if latest.root else None
+    title = latest.head.title
+    if root_id:
+        title = f"[downstream of {root_id}] {title}"
+    evidence = _evidence(title, occs, ref)
+    evidence["occurrence_number"] = number
+    if number > 1:
+        evidence["previous_incident_id"] = r.id.rsplit("#", 1)[0] + (
+            "" if number == 2 else f"#{number - 1}"
+        )
+    return Incident(
+        incident_id=r.id,
+        dedup_key=r.key,
+        pipeline=latest.pipeline,
+        type=latest.head.type.value,
+        severity=max_severity([o.severity for o in occs]),
+        status="open" if any(o.active for o in occs) else "resolved",
+        role=latest.role,
+        root_incident_id=root_id,
+        title=title,
+        first_seen=min(o.first_seen for o in occs),
+        last_seen=max(o.last_seen for o in occs),
+        evidence=evidence,
+    )
+
+
+def _evidence(title: str, occs: list[Occurrence], ref: dict[int, _Ref]) -> dict[str, Any]:
     shown = occs[-MAX_OCCURRENCES_IN_EVIDENCE:][::-1]  # newest first
     return {
         "summary": title,
@@ -249,8 +296,8 @@ def _evidence(title: str, occs: list[Occurrence]) -> dict[str, Any]:
                 "first_seen": o.first_seen.isoformat(),
                 "last_seen": o.last_seen.isoformat(),
                 "why": o.reason,
-                "root_incident_id": incident_id(o.root.key) if o.root else None,
-                "also_caused_by": [incident_id(u.key) for u in o.also_caused_by],
+                "root_incident_id": ref[id(o.root)].id if o.root else None,
+                "also_caused_by": [ref[id(u)].id for u in o.also_caused_by],
                 "signals": [s.summary() for s in o.signals],
             }
             for o in shown

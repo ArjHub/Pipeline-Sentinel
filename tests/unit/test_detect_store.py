@@ -70,3 +70,14 @@ def test_evidence_is_json_and_round_trips(tmp_path) -> None:
     upsert(tmp_path, _incidents("stale_customers"), NOW)
     ev = [json.loads(r["evidence"]) for r in read_incidents(tmp_path)]
     assert all(e["affected_ds"] == [DS] for e in ev)
+
+
+def test_resolved_incident_is_superseded_only_if_inside_the_window(tmp_path) -> None:
+    resolved = [dataclasses.replace(i, status="resolved") for i in _incidents()]
+    upsert(tmp_path, resolved, NOW)
+    last = max(i.last_seen for i in resolved)
+    # Aged out of the window: history, left alone.
+    assert not upsert(tmp_path, [], NOW, window_start=last + timedelta(seconds=1)).superseded
+    # Still inside the window but no longer derived: superseded.
+    res = upsert(tmp_path, [], NOW, window_start=last - timedelta(days=1))
+    assert len(res.superseded) == len(resolved)

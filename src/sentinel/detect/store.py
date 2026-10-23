@@ -4,9 +4,14 @@ Detection recomputes every incident from bronze on each run, then writes only wh
 changed. Re-running over unchanged bronze writes nothing (no new Delta version), and
 incident_id/first_seen/detected_at of an existing incident never change.
 
-An open incident that a later run no longer derives (for example its failed task was
-re-attributed as a symptom once the cause's event landed, or its events aged out of
-`history_days`) is marked `superseded` rather than left open forever.
+An incident that a later run no longer derives is marked `superseded`:
+  - an open one always (for example its failed task was re-attributed as a symptom once
+    the cause's event landed, or its events aged out of `history_days`), so nothing
+    stays open forever;
+  - a resolved one only if its data is still inside the bronze window being read
+    (`window_start`), i.e. detection re-derived that period and it is no longer there
+    (for example a downstream incident whose root became a recurrence #2). A resolved
+    incident that merely aged out of the window is history and is left alone.
 """
 
 from __future__ import annotations
@@ -91,7 +96,9 @@ def read_incidents(path: Path) -> list[dict[str, Any]]:
     return DeltaTable(str(path)).to_pyarrow_table().to_pylist()
 
 
-def upsert(path: Path, incidents: list[Incident], now: datetime) -> UpsertResult:
+def upsert(
+    path: Path, incidents: list[Incident], now: datetime, window_start: datetime | None = None
+) -> UpsertResult:
     existing = {r["dedup_key"]: r for r in read_incidents(path)}
     result = UpsertResult()
     changed: list[dict[str, Any]] = []
@@ -112,7 +119,10 @@ def upsert(path: Path, incidents: list[Incident], now: datetime) -> UpsertResult
 
     derived = {i.dedup_key for i in incidents}
     for key, old in existing.items():
-        if key not in derived and old["status"] == "open":
+        if key in derived:
+            continue
+        rederived = window_start is not None and old["last_seen"] >= window_start
+        if old["status"] == "open" or (old["status"] == "resolved" and rederived):
             changed.append({**old, "status": "superseded", "updated_at": now})
             result.superseded.append(old["incident_id"])
 

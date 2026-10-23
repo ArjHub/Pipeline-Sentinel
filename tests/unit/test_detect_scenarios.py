@@ -178,3 +178,36 @@ def test_detection_is_deterministic(five_weeks) -> None:
     a = detect(from_events(events), CFG, _now())
     b = detect(from_events(list(reversed(events))), CFG, _now())
     assert a == b
+
+
+# --- Recurrence: the benchmark injects the same fault more than once ---------------------
+
+
+@pytest.mark.parametrize("fault", ["missing_amount", "stale_customers", "volume_drop"])
+def test_fault_fixed_then_injected_again_is_a_second_numbered_incident(
+    five_weeks, fault, tmp_path
+) -> None:
+    """Inject on DS, fix it, inject the same fault on DS+1: two primaries, the second
+    `#2`, each with its own downstream, and both kept as separate rows in the store."""
+    from sentinel.detect.store import read_incidents, upsert
+
+    nxt = (date.fromisoformat(DS) + timedelta(days=1)).isoformat()
+    fixed = day_events(DS, fault=None, start=end_of(DS) + timedelta(hours=2), try_number=2)
+    path = tmp_path / "incidents"
+
+    first = detect(from_events(five_weeks + day_events(DS, fault=fault)), CFG, _now())
+    upsert(path, first, _now())
+    events = five_weeks + day_events(DS, fault=fault) + fixed + day_events(nxt, fault=fault)
+    second = detect(from_events(events), CFG, _now(nxt))
+    upsert(path, second, _now(nxt))
+
+    p1, p2 = primaries(second)
+    assert p2.incident_id == p1.incident_id + "#2"
+    assert (p1.status, p2.status) == ("resolved", "open")
+    assert (p1.evidence["affected_ds"], p2.evidence["affected_ds"]) == ([DS], [nxt])
+    downs = {i.root_incident_id: i for i in second if i.role == "downstream"}
+    assert set(downs) == {p1.incident_id, p2.incident_id}
+
+    rows = {r["incident_id"]: r["status"] for r in read_incidents(path)}
+    assert rows[p1.incident_id] == "resolved" and rows[p2.incident_id] == "open"
+    assert len(rows) == 4

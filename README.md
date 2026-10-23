@@ -40,7 +40,7 @@ Nothing here comes from any employer, client, or real person. Emails look like
 | `payments_etl` Glue job | **Real PySpark, Glue APIs shimmed** | `glue_compat` runs the same script without `awsglue`. DynamicFrames, bookmarks and the Glue catalog are *not* exercised locally (LocalStack Glue is a paid feature) |
 | Great Expectations 1.24 suites | **Real** | |
 | Kafka API (Redpanda v26) | **Real** | Jobs, Airflow callbacks, GX and the deploy recorder publish; the lander consumes into Delta bronze |
-| Detection (4 detectors + correlation → Delta `incidents`) | **Real** | Batch pass over bronze, run by `make detect` (not scheduled yet) |
+| Detection (4 detectors + correlation → Delta `incidents`) | **Real** | Batch pass over bronze every 60 s (`sentinel-detector` service), or once with `make detect` |
 | Prometheus + Grafana + statsd-exporter | **Real** | Airflow metrics scraped; dashboard comes in Phase 6 |
 | Claude diagnosis agent *(Phase 4)* | **Real API** if `ANTHROPIC_API_KEY` is set; a fake LLM in tests | Hard budget cap, enforced by a cost ledger |
 | Slack *(Phase 4)* | **Mocked**: local mock-Slack page + signed requests to the real FastAPI handler | A real-Slack setup guide will be provided; not tested against real Slack |
@@ -208,8 +208,14 @@ open primary incidents: 3
 Ten findings collapse into three primaries. The five failed tasks are either symptoms
 attached to their cause or downstream sensor failures. The volume incident says
 `cold_start_ratio` because the live lake has only a few days of history. With three or
-more same-weekday points, it switches to the robust z-score. Ids are deterministic, so
-the same fault for a new date gets the id shown above (see "Recurrences" below).
+more same-weekday points, it switches to the robust z-score. (This output is from
+before recurrence numbering. Today the 2026-10-16 schema incident is
+`INC-c5962d3281#2`, because it recurred after an earlier, resolved 2026-10-20 demo;
+see "Recurrences" below.)
+
+You don't have to run `make detect`: the `sentinel-detector` service runs the same pass
+every 60 s. Watch it with `docker compose logs -f sentinel-detector`. Each new primary
+incident is logged as `NEW INCIDENT INC-...`.
 
 Two things that look like bugs but are intended:
 
@@ -218,10 +224,13 @@ Two things that look like bugs but are intended:
   delivery: its latest `order_ts` is hours before the end of the day *and* it is short.
   Both signals land in one incident, named by the higher-priority cause, with the volume
   drop listed as a second signal (`test_real_truncated_file_is_one_incident_with_two_signals`).
-- **Recurrences reopen the same incident.** If the same fault comes back on another
-  date, it joins its existing incident, even a resolved one. The incident then lists
-  every affected date. For example, the 2026-10-16 `-amount` above reopened the incident
-  from an earlier 2026-10-20 demo.
+- **Recurrences get a new, numbered incident.** If you inject the same fault again after
+  fixing it, you get `INC-<same hash>#2`, then `#3`, and so on. Its evidence has
+  `occurrence_number` and `previous_incident_id`. Breaking the same thing on another
+  date *while the first incident is still open* adds that date to the open incident
+  instead. Live example: injecting `missing_amount` for 2026-10-12, after the
+  2026-10-20 and 2026-10-16 incidents had been resolved, produced
+  `NEW INCIDENT INC-c5962d3281#3` in the detector log on its next pass.
 
 ## The event stream (Phase 2)
 
@@ -326,7 +335,8 @@ flowchart LR
   C --> I[(silver/incidents<br/>Delta, upsert on dedup_key)]
 ```
 
-`make detect` is one pass: read bronze (the last `history_days` of `event_date`
+The `sentinel-detector` service runs one pass every `SENTINEL_DETECT_INTERVAL_S`
+(default 60). `make detect` runs the same pass once, by hand. A pass reads bronze (the last `history_days` of `event_date`
 partitions), run the four detectors, correlate, upsert. It's a batch job, deterministic
 and idempotent. Running it twice writes nothing the second time (no new Delta version).
 It reads **only bronze**, never Kafka, the curated tables or Airflow. All thresholds are
@@ -392,16 +402,27 @@ Three steps, all in `correlate.py`:
    downstream incident keeps its own row (`role=downstream`, `root_incident_id`) so it
    resolves on its own. It is never dropped, because a downstream problem that turns out
    to be independent must not disappear.
-3. **Across days: one incident per (pipeline, type, fingerprint).** The fingerprint is
-   the specific thing that broke (`orders_ingest:-amount`, `freshness:customers.updated_at`,
-   `volume:orders_ingest.rows_in:drop`). The same break on several days is one incident
-   listing every affected ds. `incident_id = INC- + sha256(dedup_key)[:10]`, so ids are
-   stable across re-runs, replays and machines.
+3. **Across days: one incident per (pipeline, type, fingerprint) while it's open; a
+   numbered new one if it recurs.** The fingerprint is the specific thing that broke
+   (`orders_ingest:-amount`, `freshness:customers.updated_at`,
+   `volume:orders_ingest.rows_in:drop`). Occurrences are taken in time order:
+   - **Still open:** one that starts while an earlier one is active (or before it
+     cleared) joins that incident, which adds the ds.
+   - **Recurrence:** one that starts after every earlier occurrence has cleared opens
+     `INC-<hash>#2`, then `#3`, and so on.
+   - **Downstream** incidents key off their root's numbered incident, so each
+     recurrence has its own downstream incidents.
+
+   `incident_id = INC- + sha256(pipeline|type|fingerprint)[:10]` (+ `#n`), computed
+   from bronze alone. Ids are stable across re-runs, replays and machines, and the
+   Phase 5 benchmark can tell each injection of the same fault apart.
 
 Status: `open` while any occurrence is active, `resolved` when all have cleared, and
-`superseded` when a re-run of detection no longer derives an open incident (for example
-after a config change). Human states (acknowledged, dismissed) arrive with the Slack flow
-in Phase 4.
+`superseded` when detection no longer derives an incident. An open incident is always
+superseded. A resolved one is superseded only if its period is still inside the bronze
+window (re-derived and gone, e.g. a downstream incident whose root became `#2`). Once
+it ages out of the window it is history and is left alone. Human states (`dismissed`,
+`retrying`) arrive with the Slack flow in Phase 4.
 
 **Why a batch job, not Spark Structured Streaming or a Kafka consumer.** The volume is
 tiny: tens of events per pipeline per day. Every detector needs *history* (last good
@@ -410,8 +431,9 @@ would have to rebuild as state. A pass over bronze takes about 1.3 s, peaks at a
 500 MiB RSS, and needs no JVM. It is deterministic: the same bronze always gives the same
 incidents, which is what the benchmark needs. Streaming would add checkpoints,
 watermarks and state stores to save seconds of latency that nothing here needs.
-Detection latency is "how often you run it". *(Phase 6)* A schedule or a loop runs it
-every minute.
+Detection latency is the service interval (60 s) plus the time for events to land in
+bronze (seconds). Measured live: an incident was logged 32 s after its DAG run
+finished.
 
 ### Tests (Phase 3)
 
@@ -420,12 +442,15 @@ every minute.
 | `test_detect_scenarios.py` | 24 h of clean data after 5 weeks: **0 findings**. A 7-day clean replay, detecting after each day: **0 findings, 0 incidents** at every step. All 36 days of five clean weeks, including cold start: 0. Each of the three faults gives **exactly one primary**, plus its linked downstream. A fix and re-run resolves everything. The same fault on consecutive days is one incident. Determinism (event order doesn't matter) |
 | `test_detect_real_producers.py` | The three faults through the **real** generators, Spark jobs, GX suites, events, BronzeWriter and `load_bronze`: exactly one incident each. A real clean day gives none. A truncated file gives one incident with two signals |
 | `test_detect_volume.py` | The method above, including the year of clean data and the pooled-vs-same-weekday rationale as executable checks |
-| `test_detect_{config,observations,failed_jobs,schema,late_data,correlate,store,cli}.py` | Each piece on its own; the CLI end to end on a temp lake, idempotent |
+| `test_detect_{config,observations,failed_jobs,schema,late_data,correlate,store,cli}.py` | Each piece on its own; the CLI end to end on a temp lake, idempotent. Recurrence: overlapping occurrences stay one incident; a fault after resolution is `#2`, `#3` (backfills included); downstream incidents follow their root's number; and fix-then-inject-again for all three faults gives two separately stored primaries |
+| `test_detect_service.py` | The service loop: metrics and logs per pass, new primaries reach the hook exactly once, and a failing pass or hook never stops it |
 | `tests/dags` | Config lineage (`upstream`, `final_task`) matches the DAGs' sensors and leaves |
 
 ### Known limitations (detection)
 
-- **One-shot.** `make detect` runs when you run it. Nothing schedules it yet *(Phase 6)*.
+- **Whole-window recompute every pass.** Each pass re-reads `history_days` of bronze
+  (0.5–2.5 s here). That's fine at this volume. At scale it would need incremental reads
+  plus a state table.
 - **No arrival SLA locally.** "The data never showed up" is only caught if a task fails
   or a freshness check runs. The arrival check exists and is tested, but it is off
   because the DAGs have `schedule=None` and dates are backfilled by hand.
@@ -433,43 +458,55 @@ every minute.
   weeks), only a ≥ 50% change is caught.
 - **Lineage is in config, not discovered.** A DAG test keeps it in sync with the sensors.
   A pipeline that reads another's table without a sensor must be added by hand.
-- **Recurrences reopen the old incident** (see above). There is no time window yet.
+- **The detector stays resident at about 500 MiB**, even between passes: that's
+  pyarrow, pandas and deltalake once imported. The limit is 768 MiB.
+- **delta-rs can abort at process exit (exit 134) after reading `silver/incidents`.**
+  Measured 9 of 10 one-line reads of that table in the jobs venv. The CLIs that read it
+  (`query_incidents`, `query_bronze`, `query_lake`, the lander and both detector entry
+  points) exit through `sentinel.cli.exit_now`, which skips the faulty teardown, and
+  0 of 20 of them aborted. Could it fail an Airflow task, or create a false failed-job
+  incident? **No, as far as measured.** No task reads the incidents table. Reading the
+  tables tasks do read (curated via `to_pandas`, bronze) aborted 0 of 40 times. The
+  real validate entry point (`python -m pipelines.quality`) exited 0 in 51 of 51 runs,
+  and none of the 189 Airflow task logs contains `exit code 134` or `terminate
+  called`. So the validate tasks aren't patched. If a task ever does read that table,
+  it must exit through `exit_now`.
 
-## Measured resource use (Phase 3)
+## Measured resource use (Phase 3, detector service running)
 
 Measured on 2026-10-23 on an Apple Silicon MacBook (16 GB). Docker Desktop is set to
-8 GB (`memoryMiB: 8192`, swap 1 GB; the VM reports 7.75 GiB usable). All eight services
-were up. `make mem-profile DATE=2026-10-20` samples `docker stats` every 2 s during
-`make run-all`, with `make detect` fired 45 s into the run:
+8 GB (`memoryMiB: 8192`, swap 1 GB; the VM reports 7.75 GiB usable). All nine services
+were up, including `sentinel-detector` passing every 60 s. `make mem-profile
+DATE=2026-10-12` samples `docker stats` every 2 s during `make run-all`:
 
 | Container | Idle MiB | Peak MiB |
 |---|---:|---:|
-| airflow-scheduler (runs the Spark JVMs and `make detect`) | 726 | 2,360 |
-| airflow-webserver | 972 | 1,035 |
-| sentinel-lander | 341 | 463 |
-| redpanda | 305 | 306 |
+| airflow-scheduler (runs the Spark JVMs) | 731 | 2,660 |
+| airflow-webserver | 1,194 | 1,360 |
+| sentinel-detector | 497 | 595 |
+| sentinel-lander | 185 | 479 |
+| redpanda | 308 | 317 |
 | grafana | 224 | 224 |
-| prometheus | 135 | 136 |
-| postgres | 76 | 80 |
-| statsd-exporter | 44 | 44 |
-| **Total** (idle sum / highest simultaneous total) | **2,823** | **4,502** |
+| postgres | 78 | 83 |
+| prometheus | 63 | 65 |
+| statsd-exporter | 41 | 42 |
+| **Total** (idle sum / highest simultaneous total) | **3,323** | **5,265** |
 
-- **The detector process** peaks at **503 MiB RSS** (read from `/proc/<pid>/status`
-  `VmHWM`, because one pass takes 1.3 s, shorter than one `docker stats` sample). Most of
-  that is pyarrow, pandas and deltalake being imported. It runs inside the scheduler's
-  3.5 GiB limit.
-- **`make test` is the biggest consumer.** It starts a separate `tools` container (no
-  memory limit) running local Spark next to the stack. Sampled every ~2 s during the
-  full suite, it peaked at 2,048 MiB, and the highest simultaneous total across all
-  containers was **4,907 MiB, 63% of the VM**.
-- **Headroom is about 2.8 GiB at the worst moment measured.** The stack isn't near the
-  8 GB limit. Docker Desktop's own log for the one unexpected stop during development
+- **The detector service adds about 500–600 MiB**, all of it resident between passes.
+  The stack's peak went from 4,502 MiB (Phase 3, no service) to 5,265 MiB: **66% of
+  the VM, about 2.6 GiB headroom**.
+- **`make test` is the biggest extra consumer.** It starts a separate `tools` container
+  (no memory limit) running local Spark. During the full suite it peaked at 2,048 MiB,
+  and the highest simultaneous total was 4,907 MiB, measured *before* the detector
+  service existed. Running `make test` while a `run-all` is in flight could therefore
+  approach about 7 GiB. Don't overlap them on an 8 GB VM.
+- Docker Desktop's own log for the one unexpected stop during development
   (2026-10-22 19:45 UTC) shows the app's normal quit sequence and no OOM in the VM log,
   so it wasn't memory.
-- Phase 2 measured 4,627 MiB peak (webserver 1,483 idle then; it varies with how long
-  the webserver has run). *(The first Phase 2 profile reported 6,361 MiB. That was a bug
-  in `mem_profile.sh`: a sample cut short when the sampler was stopped got merged into
-  the next one. It is fixed.)*
+- Phase 2 measured 4,627 MiB peak. Webserver memory varies with how long it has run
+  (972–1,483 MiB idle across profiles). *(The first Phase 2 profile reported
+  6,361 MiB. That was a bug in `mem_profile.sh`: a sample cut short when the sampler
+  was stopped got merged into the next one. It is fixed.)*
 
 A full `run-all` takes about 65–75 s on its own. The profiled run above took 109 s,
 because sampling `docker stats` every 2 s competes for the same CPU. Each Spark job runs

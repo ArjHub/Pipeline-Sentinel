@@ -215,6 +215,29 @@ services:
     mem_limit: 512m
     restart: unless-stopped
 
+  sentinel-detector:
+    # One detection pass over bronze every SENTINEL_DETECT_INTERVAL_S (make detect = one).
+    image: pipeline-sentinel/airflow:${IMAGE_TAG:-dev}
+    user: "${AIRFLOW_UID:-50000}:0"
+    entrypoint: ["/opt/venv/jobs/bin/python", "-m", "sentinel.detect.service"]
+    environment:
+      PYTHONPATH: /opt/sentinel:/opt/sentinel/src
+      SENTINEL_LAKE_ROOT: /opt/sentinel/data/lake
+      SENTINEL_DETECT_INTERVAL_S: ${SENTINEL_DETECT_INTERVAL_S:-60}
+      METRICS_PORT: "9109"
+    volumes:
+      - ./:/opt/sentinel
+    depends_on:
+      sentinel-lander:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-s", "-o", "/dev/null", "http://localhost:9109/metrics"]
+      interval: 10s
+      retries: 12
+      start_period: 15s
+    mem_limit: 768m
+    restart: unless-stopped
+
   # One-off container for tests and lint (`make test`, `make lint`). Not started by `up`.
   tools:
     <<: *airflow-common
