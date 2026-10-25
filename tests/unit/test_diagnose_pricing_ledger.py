@@ -86,7 +86,7 @@ def test_ledger_is_safe_under_concurrent_writers(tmp_path) -> None:
     def write():
         for _ in range(10):
             Ledger(path).record(
-                model="claude-haiku-5-5", usage=Usage(output_tokens=1000), purpose="t", ref="x"
+                model="claude-haiku-5-5", usage=Usage(output_tokens=1000), purpose="test", ref="x"
             )
 
     threads = [threading.Thread(target=write) for _ in range(4)]

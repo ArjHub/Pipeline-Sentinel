@@ -25,6 +25,10 @@ from sentinel.diagnose.pricing import Usage, cost_usd
 DEFAULT_PATH = Path(__file__).resolve().parents[3] / "benchmark" / "results" / "ledger.json"
 
 
+# What a call was for. `make query-diagnoses` shows spend by purpose.
+PURPOSES = ("diagnosis", "benchmark", "judge", "test")
+
+
 class BudgetExceededError(RuntimeError):
     pass
 
@@ -54,10 +58,21 @@ class Ledger:
             tmp.write_text(json.dumps(data, indent=2) + "\n")
             tmp.replace(self.path)
 
+    def _data(self) -> dict[str, Any]:
+        if not self.path.exists() or not self.path.stat().st_size:
+            return {"spent_usd": 0.0, "calls": []}
+        return json.loads(self.path.read_text())
+
     def spent(self) -> float:
-        if not self.path.exists():
-            return 0.0
-        return float(json.loads(self.path.read_text()).get("spent_usd", 0.0))
+        return float(self._data().get("spent_usd", 0.0))
+
+    def breakdown(self) -> dict[tuple[str, str], tuple[int, float]]:
+        """(purpose, model) -> (calls, USD)."""
+        out: dict[tuple[str, str], tuple[int, float]] = {}
+        for c in self._data()["calls"]:
+            n, usd = out.get((c["purpose"], c["model"]), (0, 0.0))
+            out[(c["purpose"], c["model"])] = (n + 1, usd + c["cost_usd"])
+        return out
 
     def reserve(self, estimate_usd: float, what: str) -> None:
         """Refuse to start a job whose worst case would cross the budget."""
@@ -69,6 +84,8 @@ class Ledger:
             )
 
     def record(self, *, model: str, usage: Usage, purpose: str, ref: str, **extra: Any) -> float:
+        if purpose not in PURPOSES:
+            raise ValueError(f"ledger purpose must be one of {PURPOSES}, got {purpose!r}")
         cost = cost_usd(model, usage)
         with self._locked() as data:
             data["calls"].append(

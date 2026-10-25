@@ -57,13 +57,25 @@ class DiagnosisConfig:
         return self.agent.prompt_file.stem
 
 
-def load_config(path: Path | None = None, model: str | None = None) -> DiagnosisConfig:
+def prompt_path(version: str) -> Path:
+    """`diagnosis_v1` (or `v1`) -> prompts/diagnosis_v1.md. Refuses a missing file."""
+    stem = version if version.startswith("diagnosis_") else f"diagnosis_{version}"
+    path = ROOT / "prompts" / f"{stem}.md"
+    if not path.is_file():
+        raise FileNotFoundError(f"no prompt {path} (versions: prompts/diagnosis_*.md)")
+    return path
+
+
+def load_config(
+    path: Path | None = None, model: str | None = None, prompt: str | None = None
+) -> DiagnosisConfig:
+    """`model` and `prompt` (a version such as `diagnosis_v1`) override the file."""
     path = path or Path(os.environ.get("SENTINEL_DIAGNOSIS_CONFIG", DEFAULT_PATH))
     with path.open("rb") as fh:
         raw = tomllib.load(fh)
     a = dict(raw["agent"])
     a["model"] = model or os.environ.get("SENTINEL_MODEL") or a["model"]
-    a["prompt_file"] = ROOT / a["prompt_file"]
+    a["prompt_file"] = prompt_path(prompt) if prompt else ROOT / a["prompt_file"]
     return DiagnosisConfig(
         agent=AgentConfig(**a),
         tools=ToolsConfig(**raw["tools"]),

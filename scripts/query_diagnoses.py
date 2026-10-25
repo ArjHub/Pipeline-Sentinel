@@ -10,7 +10,7 @@ from pathlib import Path
 from sentinel.cli import exit_now
 from sentinel.diagnose import store
 from sentinel.diagnose.config import load_config
-from sentinel.diagnose.ledger import Ledger
+from sentinel.diagnose.ledger import PURPOSES, Ledger
 
 
 def main() -> int:
@@ -23,7 +23,14 @@ def main() -> int:
     ledger = Ledger(budget_usd=cfg.budget_usd)
     rows = store.read_all(lake)
     print(f"diagnoses: {store.diagnoses_path(lake)}  total={len(rows)}")
-    print(f"ledger: {ledger.path}  spent=${ledger.spent():.5f} of ${cfg.budget_usd:.2f}\n")
+    print(f"ledger: {ledger.path}  spent=${ledger.spent():.5f} of ${cfg.budget_usd:.2f}")
+    by = ledger.breakdown()
+    print(f"  {'purpose':<10} {'model':<18} {'calls':>5} {'USD':>10}")
+    for purpose in PURPOSES:
+        rows = sorted((m, v) for (p, m), v in by.items() if p == purpose)
+        for model, (n, usd) in rows or [("-", (0, 0.0))]:
+            print(f"  {purpose:<10} {model:<18} {n:>5} {usd:>10.5f}")
+    print()
     if args.id:
         row = store.latest(lake, args.id)
         if not row:

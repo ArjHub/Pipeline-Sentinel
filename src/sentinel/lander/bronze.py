@@ -151,8 +151,9 @@ class BronzeWriter:
     def table_path(self, topic: str) -> Path:
         return self.root / topic
 
-    def land(self, messages: list[RawMessage]) -> LandResult:
-        now = datetime.now(UTC)
+    def land(self, messages: list[RawMessage], now: datetime | None = None) -> LandResult:
+        """`now` is the landed_at stamp (default: the current time)."""
+        now = now or datetime.now(UTC)
         result = LandResult()
         rows: dict[str, dict[str, dict]] = defaultdict(dict)  # topic -> event_id -> row
         dead: list[dict] = []

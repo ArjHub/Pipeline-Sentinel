@@ -17,7 +17,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 ignore = ["RUF012"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["sentinel", "pipelines"]
+known-first-party = ["sentinel", "pipelines", "benchmark"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -25,11 +25,12 @@ pythonpath = [".", "src"]
 markers = [
     "spark: needs a local SparkSession (Java + pyspark)",
     "integration: needs the docker compose stack running",
+    "benchmark_build: builds scenario lakes with the real jobs (slow; make test-benchmark)",
     "real_api: calls the real Claude API (skipped without ANTHROPIC_API_KEY; ledger-gated)",
 ]
 addopts = "-ra"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
-source = ["src/sentinel", "pipelines"]
+source = ["src/sentinel", "pipelines", "benchmark"]
 omit = ["pipelines/dags/*"]

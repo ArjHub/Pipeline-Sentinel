@@ -13,7 +13,7 @@ A self-diagnosing data pipeline platform. It monitors batch pipelines, detects f
 and data drift, and uses an LLM to explain the likely root cause and suggest a fix. A
 human then approves any retry from Slack.
 
-> **Status: Phase 4 of 6 (diagnosis agent and Slack).** Each phase lands as its own commit and tag.
+> **Status: Phase 5a of 6 (benchmark harness built; benchmark not run yet).** Each phase lands as its own commit and tag.
 > Sections marked *(Phase N)* describe work that hasn't been built yet.
 
 | Phase | Scope | State |
@@ -22,7 +22,7 @@ human then approves any retry from Slack.
 | 2 | Event stream: Redpanda producers, Delta bronze lander, deploy events, replay | ✅ done |
 | 3 | Detection: failed jobs, schema drift, late data, volume anomalies, suppression | ✅ done |
 | 4 | Diagnosis agent (Claude, tool use) + Slack Block Kit + FastAPI retry endpoint | ✅ done |
-| 5 | Benchmark: 30 labelled faults, accuracy/latency/cost, manual baseline | ⏳ |
+| 5 | Benchmark: 30 labelled faults, accuracy/latency/cost, manual baseline | 🔧 5a harness done; 5b run pending |
 | 6 | Terraform (plan only), CI, Grafana dashboard, final docs | ⏳ |
 
 ## Data: synthetic only
@@ -853,7 +853,252 @@ because sampling `docker stats` every 2 s competes for the same CPU. Each Spark 
   exact pin would break fresh builds.
 - **Synthetic data** is a pure function of `(SENTINEL_SEED, dataset, ds)`.
 
-## Benchmark honesty notes *(Phase 5)*
+## Benchmark harness (Phase 5a)
+
+> **State:** the harness, the fault catalog and the 39 scenario lakes are built and
+> tested. **The benchmark has not been run**, and Phase 5a made **no API calls** (ledger
+> unchanged at $0.10107513). Results, charts and the failure analysis come in Phase 5b,
+> after the manual trials.
+
+> **If you are going to do the manual trials, don't open `benchmark/sealed/`,** and don't
+> decode `catalog.b64` or read `data/benchmark/*/manifest.json`. The sealed file holds every
+> fault's label; the manifests show which tasks failed. Everything else (including
+> `benchmark/harness/templates.py`, which lists the *kinds* of fault but not which id is
+> which) is safe to read.
+
+```bash
+make benchmark DRY_RUN=1                              # plan + cost estimate, no API call
+make benchmark DRY_RUN=1 MODEL=claude-sonnet-5-5      # Sonnet, 1 repeat by default
+make benchmark                                        # Haiku 5.5, 3 repeats per fault
+make benchmark MODEL=claude-sonnet-5-5                # Sonnet 5.5, 1 repeat
+make benchmark RESUME=1                               # continue after a timeout / sleep
+make benchmark PROMPT=diagnosis_v2                    # another frozen prompt (none yet)
+make benchmark SPLIT=dev                              # the 9-fault dev set
+make benchmark-build                                  # (re)build scenario lakes, no API
+make benchmark-status                                 # counts only, no labels
+make manual-trial                                     # the timed blind baseline
+make benchmark-catalog CHECK=1                        # catalog == a fresh seeded draw
+make test-benchmark                                   # slow end-to-end build test (~4 min)
+```
+
+`make benchmark` refuses to start unless `SENTINEL_AUTO_DIAGNOSE=0` (in `.env`, and in
+the running `sentinel-detector` if there is one), so no background diagnosis spends money
+during a run or muddies its cost and latency. The harness starts every diagnosis itself.
+
+### The faults
+
+39 faults in a sealed catalog: **30 benchmark + 9 dev** (the dev set is only for
+tuning a possible v2 prompt, and shares no fault with the benchmark). They are drawn with
+a fixed seed (`config/benchmark.toml`, `[catalog] seed`) from the templates in
+`benchmark/harness/templates.py`. Each template is a kind of fault with a pool of
+parameters (dataset, column, task, limit, ...). A slot plan fixes how many of each kind go
+in each split; the draw picks the parameters, the business date (distinct, 2026-06-15 to
+2026-09-27) and an opaque id (`F-` + 6 random characters).
+
+The benchmark covers the categories that were asked for: schema drift (add, drop,
+rename, type change), late data, OOM, bad deploy, upstream outage, data quality (null
+spike, duplicate load, out-of-range values), at least 3 ambiguous or novel faults where
+`unknown` is correct or accepted, and at least 5 clean runs for the false-positive rate.
+The catalog is the only place labels live.
+
+How each kind is produced is described in `benchmark/sealed/MECHANISMS.md`, sealed
+until the manual trials are done (it moves here in Phase 5b). In short: every fault is a
+real run of the real code; the source system, a deploy, a task's environment, a delivered
+file or an upstream DAG run is what goes wrong.
+
+**What changed from the Phase 4 break-it, and why.** `make break-it` ran a green run of the
+date first, then broke the input and re-ran only some tasks. The agent then saw two runs
+of the same date that disagreed, and reasoned about the minute between them (known gap 5).
+Deploy events were this repo's real development commits, which have nothing to do with the
+pipelines (gap 4). Now:
+- every fault is **one nightly run of its date, with nothing run for that date before it**;
+- the run is preceded by **six weeks of clean history** with a realistic **deploy history**
+  (pipeline and shared-code deploys every few days, benign commit messages), so recent
+  deploys exist in every scenario, faulty or not, as they would in production;
+- faults come from the source or the environment, not from editing files between tasks,
+  so every metric of the run is consistent with what happened;
+- runs happen at night on the simulated clock (ds + 1 day, 00:05 UTC), not days later;
+- the fault kinds and parameters were fixed before any agent run and were not adjusted
+  to the agent. The only parameter checks were that each fault really happens (for
+  example that the OOM limits really kill each job).
+
+The faults were made realistic, not easier: evidence is wherever the real system would
+put it, including where it is hard to reach.
+
+### How a scenario is built (`benchmark/harness/scenario.py`)
+
+Each fault gets its own lake under `data/benchmark/scenarios/<fault_id>/lake`, built from
+scratch, so every fault starts from the same clean state.
+
+1. **Build tree.** A fresh copy of `pipelines/` and `src/` in an isolated root
+   (`/opt/sentinel` inside the `benchmark` container, an empty tmpfs; the repo is mounted at
+   `/workspace`). Log lines and tracebacks therefore show the same paths as the stack. The
+   fault's code regression, if any, is applied to this copy only.
+2. **Pre-state.** The real `customers_dim` job for ds - 1, so the dimension exists and the
+   fault night's MERGE behaves like any other night.
+3. **History (`history.py`).** 42 clean nights before the fault date, cloned from one real
+   clean night (`template_ds` 2026-05-11, built once with the real jobs). For each date the
+   clone recomputes from the generators: row counts (generators, jobs, GX `row_count`), the
+   customers MERGE inserted/updated split, the daily-revenue group count and the GX
+   freshness max. A test checks that these recomputed values equal what the real template
+   run reported. Timing is the template night moved to ds + 1 day 00:05 (+ jitter) and
+   stretched by 0.92-1.12; code versions follow the deploy history. Schemas, DQ outcomes,
+   task order and log formats are the real template's. With 42 days, every
+   `same_weekday` volume baseline has 6 points and `recent` has 7, so the volume detector
+   uses its median/MAD robust z-score, never cold start (tested).
+4. **The night (`airflow_emu.py`).** All four DAGs run for the fault date.
+5. **Land.** Every event goes through the real `BronzeWriter`.
+6. **Detect.** One pass of the real detectors and correlation, 30 minutes after the night's
+   last task.
+7. **Check.** The incident appears where the recipe says (or none for a clean run), and the
+   leak scan finds nothing (below). Either failure stops the build.
+
+`make benchmark-build` skips scenarios that are already built. The build hash in each
+manifest is recorded with every result, so results can't silently mix builds.
+
+**Emulated Airflow.** Resetting the live stack per fault (Airflow metadata, Redpanda, lake)
+would take minutes per fault and make ids and timings irreproducible. So the scheduler is
+emulated, and the rest is real:
+- *Real:* each task runs the exact `bash -c` command its DAG renders, as a subprocess with
+  the `AIRFLOW_CTX_*` variables BashOperator exports, so the real generators, Spark jobs
+  and GX suites run and emit their own events. `task_run` events and failure log tails come
+  from the **real callbacks** (`sentinel.instrumentation.airflow_callbacks`), fed a
+  task-instance stand-in and a task log in Airflow's format that the real `log_tail` reads.
+  `tests/dags` checks the emulator's task list, order, commands, pools and sensor targets
+  against the real DagBag.
+- *Simulated:* the clock (tasks are placed as 4 parallel DAG runs and a 2-slot Spark pool
+  would place them; wall-clock timestamps in events and log lines are moved onto that
+  night, measured durations kept), sensors (decided from the upstream outcome, with
+  Airflow's real messages), and Airflow's own lines in the task log (copied from real task
+  logs of this stack).
+- Not exercised: Redpanda (events go straight to the bronze writer), retries (the DAGs
+  have none), and the real scheduler's own timing quirks.
+
+**Reproducibility.** Fixed seeds everywhere: the catalog draw, the data (`SENTINEL_SEED`
+42), the history and deploy noise, the emulator's clock and ids (per fault id), the manual
+trial order. `make benchmark-catalog CHECK=1` proves the catalog is a fresh draw. A
+rebuilt scenario has the same data, history, deploys, incidents and ids; only measured
+task durations and the exact wording of a real JVM crash can differ. `make benchmark`
+reads the built lakes, so a run is reproducible given the same build.
+
+### How ground truth is hidden from the agent
+
+- The agent's six tools read only bronze and the incidents table of the scenario lake. The
+  catalog, manifests and results are elsewhere and no tool can reach them.
+- Scenario builds use only a fault's recipe, never its label.
+- Nothing in the lake names a fault: run ids are `scheduled__<ds>`, DAG and task names are
+  the normal ones, the build root is `/opt/sentinel` like the stack, commit messages are
+  ordinary, fault ids appear nowhere.
+- **Every build scans** every row and payload of bronze and the incidents table for every
+  fault id, template key and root-cause text in the catalog, and for the words fault,
+  inject, benchmark, sealed, label, ground truth, scenario, harness, catalog, break-it
+  (`leaks.py`; tests plant each kind and check it is found). A hit fails the build. All 39
+  scenarios: **0 hits**.
+- Benchmark results hold only the agent's output; labels are joined at scoring time
+  (Phase 5b).
+
+### How the manual baseline is protected from bias
+
+- `make manual-trial` picks 10 benchmark faults with an incident, stratified over the
+  seven fault families (one each, then three more at random: about 2 per family), in a
+  seeded random order stored as opaque ids only (`benchmark/results/manual/trial_plan.json`).
+- Each trial copies that fault's lake fresh to `data/benchmark/trial/lake`. You press a key:
+  the clock starts and the incident alert appears. You investigate in a second terminal
+  with **the same evidence the agent has**: `make trial-incident` (the record the agent
+  gets first), `make trial-inspect TOOL=<one of the six tools>`, `make trial-bronze DS=`.
+  Back in the trial terminal you give a category, a one-line root cause and retry-safe;
+  the clock stops when you submit.
+- The diagnosis is written and fsync'ed **before** the label is shown. `REVEAL=end` keeps
+  all labels until the last trial, so an early reveal can't hint at what is left by
+  elimination. Re-running continues at the first unrecorded trial.
+- The labels live only in `benchmark/sealed/catalog.b64`, base64-encoded so a grep or a
+  glance doesn't show them (not encryption).
+- **Blinding is partial** (see the honesty notes): you chose the category list, and the
+  fault kinds are visible in this phase's code and in the session that built it. You haven't seen which id is which, the drawn
+  parameters, or the dates, and this phase's reports give counts only.
+
+### Resume
+
+Every finished diagnosis is appended to
+`benchmark/results/runs/<split>__<model>__<prompt>/results.jsonl` and fsync'ed. Items run
+in repeat-major order (every fault once, then every fault again), so no repeat runs right
+after itself and reuses its own prompt cache. `make benchmark RESUME=1` skips every item
+already in the file, so an interruption costs at most the one diagnosis in flight. Without
+`RESUME=1` the harness refuses to append to an existing run. Items that ended in `error`
+(an API failure) are skipped too unless `RETRY_ERRORS=1`; `budget_refused` items cost
+nothing and are always retried. Scenario builds resume the same way.
+
+### The ledger gate and the cost estimate
+
+Before anything runs, the harness estimates the cost of the pending items and prints three
+numbers:
+
+| | Basis |
+|---|---|
+| expected | Phase 4 mean cost per diagnosis (Haiku $0.00291, n=4; Sonnet $0.03627, n=2) x items |
+| high | 2 x the dearest Phase 4 diagnosis x items. **The gate uses this** |
+| worst | every diagnosis at its token caps. Not reachable in practice; each diagnosis reserves this before it starts, which is what makes the $10 cap hard |
+
+It refuses if ledger spent + high > $10. `DRY_RUN=1` stops after the estimate. Spend is
+recorded with a `purpose` (`diagnosis | benchmark | judge | test`), and
+`make query-diagnoses` shows spend by purpose and model. Ledger rows from before Phase 5
+are all `diagnosis`, including the Phase 4 `make test-real-api` calls (fixture id
+`INC-c5962d3281` without `#n`); they were left as recorded.
+
+Dry run on the built scenarios (2026-10-25, ledger spent $0.10107513):
+
+| Model | Repeats | Work items | Expected | High (gate) | Worst case (caps) | Spent + gate |
+|---|---:|---:|---:|---:|---:|---:|
+| Haiku 5.5 | 3 | 78 | $0.227 | $0.554 | $1.877 | $0.655 |
+| Sonnet 5.5 | 1 | 26 | $0.943 | $2.240 | $12.51 | $2.341 |
+
+26 work items per repeat: 24 of the 30 faults produced one primary incident and one
+produced two; the 5 clean runs produced none (a detection-level false-positive rate of
+0/5, so no clean run will be diagnosed). Both runs together: about $1.17 expected,
+$2.79 at the gate estimate. The Sonnet worst case exceeds $10 on paper, but each
+diagnosis reserves its own worst case ($0.48) first, so a run stops before the cap rather
+than crossing it.
+
+The LLM judge for free-text root causes (`benchmark/harness/judge.py`, frozen prompt
+`prompts/judge_v1.md`, Haiku, purpose `judge`) is built and tested against fakes only. It
+adds about $0.0006 per judged diagnosis (`JUDGE=1` adds it to the estimate).
+
+### Prompt discipline
+
+`prompts/diagnosis_v1.md` is frozen (sha256 `3507e5f0...b31d`, a test fails if it changes).
+The Phase 4 findings (early `unknown`, repeated tool calls, irrelevant deploys cited,
+`rows_out` not explained) are known issues for the failure analysis, not fixed. The prompt
+version is selectable (`PROMPT=`). A v2 may only be tuned on the dev split and would then
+be benchmarked next to v1 on the same 30 faults; it doesn't exist yet.
+
+### Tests (Phase 5a)
+
+| Test file | What it proves |
+|---|---|
+| `test_benchmark_catalog.py` | the committed catalog is a fresh seeded draw; 30 + 9; coverage of every requested category and subtype, >= 3 ambiguous, >= 5 clean; dev disjoint from benchmark; opaque ids, distinct dates; the sealed file has no readable label text. Assertions compare counts only, so a failure never prints a label |
+| `test_benchmark_source_shim.py` | each source mutation; no profile = generator output byte for byte; integer columns stay integer with NULLs; orders and payments drop the same orders; an unreachable endpoint raises a real network error |
+| `test_benchmark_history.py` | clones carry each day's counts, MERGE split, freshness max and run ids; timing after midnight; code versions follow deploys; 6 weeks of clean history give **no findings** and the volume detector's **robust z** path (not cold start) |
+| `test_benchmark_emulator.py` | 14 tasks on the simulated clock; Spark pool of 2; task environment (source profile, JVM option only where set, `AIRFLOW_CTX_*`); a failed task goes through the **real** failure callback with an Airflow-format log tail; upstream_failed tasks emit nothing; sensors fail on a failed upstream, time out on a missing one, and time out on a late one that completes later; only wall-clock timestamps are shifted |
+| `test_benchmark_runner.py` | repeat-major plan; dry run makes no LLM call; an interrupted run keeps every finished item and `--resume` finishes only the rest; no silent append without resume; errors kept unless `--retry-errors`; the gate refuses; refuses with auto-diagnosis on; ledger rows are `benchmark`; prompt selection and a missing v2 |
+| `test_benchmark_manual.py` | stratified seeded selection without clean runs; the label is never shown before the diagnosis is on disk; `REVEAL=end`; resume after stopping; `trial-inspect` uses the agent's tools on the trial lake |
+| `test_benchmark_judge_leaks.py` | frozen prompt hashes; judge verdicts ledgered as `judge`, budget-gated, bad output → `error`; ledger purposes validated and summed; leak scan clean on a normal lake and finds each planted kind |
+| `test_benchmark_build.py` (`make test-benchmark`) | with the real jobs: template night, a clean scenario (14 green tasks, no incident, robust z) and a schema fault (its incident, stack-like log tails, the schema diff) |
+| `tests/dags` | the emulator's DAG model equals the real DagBag |
+
+### Known limitations (Phase 5a)
+
+- **Airflow is emulated** (above). Its framing lines in task logs are copied from real
+  logs, not produced by Airflow.
+- **One template night** is the shape of every history night. Real nights vary more (an
+  occasional WARNING, a retry, a slow task).
+- **History is clean.** Real history contains past incidents; here the only incident is
+  the fault's.
+- Some fault kinds use a trigger chosen because the natural one doesn't fail these small
+  jobs; the reasons are in `benchmark/sealed/MECHANISMS.md` (sealed until the trials).
+- **Scenario lakes are not committed** (`data/` is git-ignored); they are rebuilt from the
+  seed. A rebuild can differ in measured durations and in the exact text of a JVM crash.
+
+## Benchmark honesty notes
 
 - **The manual baseline is only partially blind.** The faults are injected in randomized
   order and labels stay hidden until each diagnosis is recorded. But the person timing
@@ -861,6 +1106,9 @@ because sampling `docker stats` every 2 s competes for the same CPU. Each Spark 
   they had prior knowledge of the category set.
 - Only 10 of the 30 faults (about 2 per category) are timed by hand. The other 20 are
   reported as "not manually timed" and are never estimated.
+- The author also saw the fault *templates* (the kinds of fault and their parameter
+  pools) in the Phase 5a code and session, but not which opaque id is which, the drawn
+  parameters or the dates: the catalog was written by a seeded script and never printed.
 
 ## Security (so far)
 
@@ -887,12 +1135,14 @@ src/sentinel/ events/ (models, sinks, replay, schema) instrumentation/ (job wrap
              diagnose/ (agent, tools, llm, schema, redact, pricing, ledger, store)
              notify/ (Block Kit, mock + real Slack) actions/ (handler, audit) api/ (FastAPI,
              signing) cli.py
-prompts/     diagnosis_v1.md                            # versioned system prompt
-benchmark/   results/ledger.json                        # every real LLM call and its cost
+prompts/     diagnosis_v1.md judge_v1.md                # versioned, frozen prompts
+benchmark/   harness/ (catalog, templates, scenario, history, airflow_emu, runner, manual,
+             judge, leaks) sealed/ (labels: don't open before the manual trials)
+             results/ledger.json (every real LLM call)  runs/ manual/
 schemas/     event.schema.json                          # generated contract (make schemas)
 docker/      airflow/Dockerfile
 observability/ prometheus/ statsd/ grafana/
-config/      detection.toml diagnosis.toml              # every threshold, cap and allowlist
+config/      detection.toml diagnosis.toml benchmark.toml   # thresholds, caps, benchmark
 scripts/     run_all.py query_lake.py query_bronze.py query_incidents.py break_it.sh
              query_diagnoses.py demo_e2e.py lake_json.py
              init_env.sh wait_healthy.sh mem_profile.sh create_topics.sh

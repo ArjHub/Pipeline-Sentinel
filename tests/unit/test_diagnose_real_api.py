@@ -27,7 +27,9 @@ CFG = load_config()
 
 def _agent(cfg=CFG) -> Agent:
     # The project ledger (benchmark/results/ledger.json): real spend is really counted.
-    return Agent(cfg, AnthropicLLM(cfg.agent.model), Ledger(budget_usd=cfg.budget_usd))
+    return Agent(
+        cfg, AnthropicLLM(cfg.agent.model), Ledger(budget_usd=cfg.budget_usd), purpose="test"
+    )
 
 
 def test_real_diagnosis_of_missing_amount(tmp_path) -> None:

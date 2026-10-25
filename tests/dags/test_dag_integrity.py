@@ -111,3 +111,27 @@ def test_detection_config_lineage_matches_the_dags(dagbag) -> None:
         assert [t.task_id for t in dag.leaves] == [pipelines[dag_id]["final_task"]], dag_id
         for s in sensors:  # a sensor waits on the upstream's final task
             assert s.external_task_id == pipelines[s.external_dag_id]["final_task"]
+
+
+def test_benchmark_emulator_mirrors_the_dags(dagbag) -> None:
+    """benchmark.harness.dags (what the emulated scheduler runs) == the real DAGs."""
+    from benchmark.harness.dags import DAGS
+
+    assert set(DAGS) == set(dagbag.dag_ids)
+    for dag_id, tasks in DAGS.items():
+        dag = dagbag.dags[dag_id]
+        assert {t.task_id for t in tasks} == set(dag.task_ids)
+        order = [t.task_id for t in dag.topological_sort()]
+        bash = [t for t in tasks if t.operator == "BashOperator"]
+        assert [t.task_id for t in bash] == [x for x in order if x in {b.task_id for b in bash}]
+        for t in tasks:
+            real = dag.get_task(t.task_id)
+            assert type(real).__name__ == t.operator
+            if t.operator == "BashOperator":
+                assert real.bash_command.replace("{{ ds }}", "2026-01-02") == t.command(
+                    "2026-01-02"
+                )
+                assert (real.pool == "spark") == t.spark
+            else:
+                assert real.external_dag_id == t.external_dag_id
+                assert real.external_task_id == t.external_task_id

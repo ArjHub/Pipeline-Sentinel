@@ -89,9 +89,12 @@ def incident_message(incident: dict[str, Any], max_chars: int) -> str:
 
 
 class Agent:
-    def __init__(self, cfg: DiagnosisConfig, llm: LLMClient, ledger: Ledger) -> None:
+    def __init__(
+        self, cfg: DiagnosisConfig, llm: LLMClient, ledger: Ledger, purpose: str = "diagnosis"
+    ) -> None:
         self.cfg, self.llm, self.ledger = cfg, llm, ledger
         self.a = cfg.agent
+        self.purpose = purpose  # ledger purpose: diagnosis | benchmark | test
 
     def worst_case_usd(self) -> float:
         if not self.llm.billable:
@@ -157,7 +160,7 @@ class Agent:
             run.cost_usd += self.ledger.record(
                 model=self.a.model,
                 usage=resp.usage,
-                purpose="diagnosis",
+                purpose=self.purpose,
                 ref=run.incident_id,
                 prompt_version=run.prompt_version,
                 request_id=resp.request_id,

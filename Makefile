@@ -16,6 +16,8 @@ export
 .DEFAULT_GOAL := help
 .PHONY: help env build up down clean ps logs deploy run-all query query-bronze replay-events land \
 	detect query-incidents break-it diagnose query-diagnoses demo-e2e \
+	benchmark benchmark-build benchmark-status benchmark-catalog manual-trial trial-inspect \
+	trial-incident trial-bronze test-benchmark \
 	schemas test test-unit test-dags test-e2e test-real-api lint fmt lock mem mem-profile
 
 help: ## Show targets
@@ -85,13 +87,54 @@ demo-e2e: ## break-it -> detect -> diagnose -> mock Slack -> Retry click -> gree
 break-it: ## Inject a fault on the live stack: FAULT=missing_amount|volume_drop|stale_customers DATE=
 	bash scripts/break_it.sh $(FAULT) $(DATE)
 
+# --- Phase 5 benchmark (python -m benchmark.harness; see README "Benchmark harness") ---
+BENCH := $(COMPOSE) run --rm benchmark
+BENCH_PY := $(JOBS_PY) -m benchmark.harness
+SPLIT ?= benchmark
+PROMPT ?= diagnosis_v1
+BENCH_MODEL = $(or $(MODEL),claude-haiku-5-5)
+
+benchmark-catalog: ## Re-draw the sealed fault catalog (seeded; CHECK=1 only verifies it)
+	$(BENCH) "$(BENCH_PY) gen-catalog $(if $(CHECK),--check)"
+
+benchmark-build: ## Build scenario lakes (real jobs, no API calls): SPLIT=all|benchmark|dev [REBUILD=1]
+	$(BENCH) "$(BENCH_PY) build --split $(or $(BUILD_SPLIT),all) $(if $(REBUILD),--rebuild)"
+
+benchmark: ## Run the benchmark: MODEL= REPEATS= PROMPT=diagnosis_v1 SPLIT=benchmark DRY_RUN=1 RESUME=1
+	@$(if $(DRY_RUN),,bash scripts/check_auto_diagnose_off.sh)
+	$(if $(DRY_RUN),,$(MAKE) --no-print-directory benchmark-build BUILD_SPLIT=$(SPLIT))
+	$(COMPOSE) run --rm -e ANTHROPIC_API_KEY -e SENTINEL_AUTO_DIAGNOSE benchmark \
+	  "$(BENCH_PY) run --model $(BENCH_MODEL) --split $(SPLIT) --prompt $(PROMPT) \
+	  $(if $(REPEATS),--repeats $(REPEATS)) $(if $(DRY_RUN),--dry-run) $(if $(RESUME),--resume) \
+	  $(if $(RETRY_ERRORS),--retry-errors) $(if $(JUDGE),--judge)"
+
+benchmark-status: ## Scenario and result counts (no labels)
+	$(BENCH) "$(BENCH_PY) status"
+
+manual-trial: ## Timed blind manual baseline (10 faults); REVEAL=end keeps labels to the end
+	$(BENCH) "$(BENCH_PY) manual-trial --reveal $(or $(REVEAL),each)"
+
+trial-inspect: ## During a trial: TOOL=get_error_logs [PIPELINE=] [DS=] [ARGS='{...}'] [INCIDENT=]
+	@$(BENCH) "$(BENCH_PY) inspect --tool $(TOOL) $(if $(PIPELINE),--pipeline $(PIPELINE)) \
+	  $(if $(DS),--ds $(DS)) $(if $(ARGS),--args '$(ARGS)') $(if $(INCIDENT),--incident '$(INCIDENT)')"
+
+trial-incident: ## During a trial: the incident record (what the agent gets first)
+	@$(BENCH) "$(BENCH_PY) incident $(if $(INCIDENT),--incident '$(INCIDENT)')"
+
+trial-bronze: ## During a trial: bronze rows of the trial lake for DS=
+	@$(COMPOSE) run --rm -e SENTINEL_LAKE_ROOT=/workspace/data/benchmark/trial/lake benchmark \
+	  "$(JOBS_PY) scripts/query_bronze.py --ds $(DS)"
+
+test-benchmark: ## Slow: build a template night + 2 scenarios with the real jobs in a temp dir
+	$(COMPOSE) run --rm tools "$(JOBS_PY) -m pytest tests/unit -q -m benchmark_build -p no:cacheprovider"
+
 schemas: ## Regenerate schemas/event.schema.json from the Pydantic models
 	$(COMPOSE) run --rm tools "$(JOBS_PY) -m sentinel.events.schema"
 
 test: test-unit test-dags ## Run all unit + DAG tests in a container
 
 test-unit: ## Unit tests (generators, jobs on local Spark, GX suites, events)
-	$(COMPOSE) run --rm tools "$(JOBS_PY) -m pytest tests/unit -q --cov --cov-report=term-missing:skip-covered"
+	$(COMPOSE) run --rm tools "$(JOBS_PY) -m pytest tests/unit -q -m 'not benchmark_build' --cov --cov-report=term-missing:skip-covered"
 
 test-dags: ## DAG integrity tests with Airflow's own interpreter
 	$(COMPOSE) run --rm tools "python -m pytest tests/dags -q -p no:cacheprovider"

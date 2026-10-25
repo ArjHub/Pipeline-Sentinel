@@ -299,6 +299,30 @@ services:
       SENTINEL_LAKE_ROOT: /tmp/sentinel-test/lake
       SENTINEL_EVENTS_DIR: /tmp/sentinel-test/events
 
+  # Benchmark harness (`make benchmark*`, `make manual-trial`). The repo is mounted at
+  # /workspace; /opt/sentinel is an empty tmpfs used as the isolated build root, so the
+  # jobs it runs log the same paths as the stack. No API key unless a target passes one.
+  benchmark:
+    <<: *airflow-common
+    profiles: ["tools"]
+    entrypoint: ["/usr/bin/dumb-init", "--", "/entrypoint", "bash", "-c"]
+    command: ["echo 'use: docker compose run --rm benchmark \"<cmd>\"'"]
+    depends_on: {}
+    working_dir: /workspace
+    environment:
+      <<: *airflow-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////tmp/airflow-bench.db
+      PYTHONPATH: /workspace:/workspace/src
+      SENTINEL_EVENT_SINK: none
+      SENTINEL_LAKE_ROOT: /opt/sentinel/data/lake
+      SENTINEL_BENCHMARK_BUILD_ROOT: /opt/sentinel
+      SENTINEL_LEDGER_PATH: /workspace/benchmark/results/ledger.json
+      SENTINEL_AUTO_DIAGNOSE: ${SENTINEL_AUTO_DIAGNOSE:-1}
+    volumes:
+      - ./:/workspace
+    tmpfs:
+      - /opt/sentinel:mode=1777,size=2g
+
 volumes:
   postgres-data:
   redpanda-data:

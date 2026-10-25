@@ -1,0 +1,65 @@
+# PipelineSentinel benchmark harness (Phase 5). Every key required.
+
+[catalog]
+# Faults are drawn from benchmark/harness/templates.py with this seed and written,
+# with their labels, to the sealed catalog. Business dates come from this range.
+path = "benchmark/sealed/catalog.b64"
+seed = 5150
+first_ds = "2026-06-15"
+last_ds = "2026-09-27"
+
+[history]
+# Clean history before each fault date, so the volume detector uses its robust z-score
+# on same-weekday / recent baselines (6 same-weekday points), not cold start.
+days = 42
+# History days are cloned from one real clean run of this date (real generators, Spark
+# jobs, GX suites and Airflow callbacks), with row counts, freshness values, timings and
+# code versions recomputed per day.
+template_ds = "2026-05-11"
+# Deploys in the history window (noise a real team produces): per pipeline every
+# min..max days, plus shared-code deploys that touch all four pipelines.
+pipeline_deploy_every_days = [4, 12]
+shared_deploy_every_days = [9, 21]
+
+[schedule]
+# Nightly runs: each business date's DAG runs start at ds + 1 day 00:05 UTC (+ jitter).
+start_after_midnight_s = 300
+start_jitter_s = 40
+# Delay between a task finishing and the next one starting (Airflow scheduler loop).
+scheduler_latency_s = [0.8, 3.5]
+spark_pool_slots = 2               # airflow pools set spark 2
+sensor_timeout_s = 1800            # SENTINEL_UPSTREAM_TIMEOUT_S default in the DAG
+sensor_poke_interval_s = 10
+# The detection pass runs this long after the last task of the night finished.
+detect_after_s = 1800
+
+[paths]
+# Scenario lakes (rebuildable, not committed) and committed results.
+work_dir = "data/benchmark"
+results_dir = "benchmark/results/runs"
+manual_dir = "benchmark/results/manual"
+
+[run]
+# Repeats per fault when REPEATS isn't given.
+repeats = { "claude-haiku-5-5" = 3, "claude-sonnet-5-5" = 1 }
+
+[estimate]
+# Cost per diagnosis measured in Phase 4 (the 6 real diagnoses in the diagnoses table,
+# 2026-10-23): Haiku 5.5 n=4, Sonnet 5.5 n=2. "high" = 2x the dearest one seen; the
+# run-level budget gate uses it. The per-diagnosis gate still reserves the worst case
+# under the token caps before every diagnosis (sentinel.diagnose.agent).
+mean_usd = { "claude-haiku-5-5" = 0.00291, "claude-sonnet-5-5" = 0.03627 }
+max_usd = { "claude-haiku-5-5" = 0.00355, "claude-sonnet-5-5" = 0.04308 }
+high_multiple = 2.0
+
+[judge]
+# LLM judge for the free-text root cause (Phase 5b scoring), purpose "judge" in the
+# ledger. Estimated per judged diagnosis; not run in Phase 5a.
+model = "claude-haiku-5-5"
+prompt_file = "prompts/judge_v1.md"
+max_tokens = 1024
+estimate_usd = 0.0006
+
+[manual_trial]
+seed = 9031
+count = 10
