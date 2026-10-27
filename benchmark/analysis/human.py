@@ -131,8 +131,10 @@ def cohen_kappa(a: list, b: list, labels: list, weights: str | None = None) -> f
 
 def agreement(settings: Settings, out_dir: Path) -> dict[str, Any]:
     key = json.loads((out_dir / "key.json").read_text())
-    with (out_dir / "scores.csv").open() as fh:
-        human = {r["sample_id"]: r for r in csv.DictReader(fh)}
+    # Spreadsheet apps may save a BOM, CRLF line ends or a leading blank line; skip them.
+    with (out_dir / "scores.csv").open(encoding="utf-8-sig", newline="") as fh:
+        lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+    human = {r["sample_id"].strip(): r for r in csv.DictReader(lines)}
     judged: dict[tuple[str, str, str], dict] = {}
     for run in {v["run"] for v in key.values()}:
         for j in load_results(settings.results_dir / run / "judge.jsonl"):
