@@ -6,6 +6,7 @@ score                      metrics.json, CSVs and SVG charts (no API)
 human-sample               draw the blind 15-diagnosis fix-quality sheet
 agreement                  judge vs. human agreement from the filled-in sheet
 posthoc --label L --model M  Phase 5c: a labelled run vs. v1 (its own lakes; no API)
+    [--prior L1 ...]          Phase 5d: v1 vs. each prior round vs. L, into report/L/
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     ph = sub.add_parser("posthoc")
     ph.add_argument("--label", required=True)
     ph.add_argument("--model", default="claude-haiku-5-5")
+    ph.add_argument("--prior", action="append", default=[], help="earlier round labels, in order")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.WARNING)
     settings = load_settings()
@@ -69,6 +71,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "posthoc":
         with DEFAULT_PATH.open("rb") as fh:
             v1_work = ROOT / tomllib.load(fh)["paths"]["work_dir"]
+        if args.prior:
+            m = posthoc.rounds(
+                faults,
+                settings,
+                model=args.model,
+                prompt=args.prompt,
+                label=args.label,
+                priors=args.prior,
+                v1_work=v1_work,
+                report_dir=report,
+            )
+            print(json.dumps({k: m[k] for k in ("note", "rescored_equals_committed")}, indent=2))
+            return 0
         m = posthoc.run(
             faults,
             settings,

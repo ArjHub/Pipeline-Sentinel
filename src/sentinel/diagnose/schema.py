@@ -32,6 +32,12 @@ EvidenceKind = Literal[
 EVIDENCE_KINDS: tuple[str, ...] = EvidenceKind.__args__  # type: ignore[attr-defined]
 MIN_QUOTE_CHARS = 4
 GUARDRAIL_NOTE = "[guardrail: top cause is unknown, so retry_safe forced to false] Model said: "
+OOM_GUARDRAIL_NOTE = (
+    "[guardrail: top cause is oom, so retry_safe forced to false; a retry with the same "
+    "memory settings and input fails the same way] Model said: "
+)
+# Top categories for which a retry is never offered, whatever the model says.
+NEVER_RETRY_SAFE = {"unknown": GUARDRAIL_NOTE, "oom": OOM_GUARDRAIL_NOTE}
 
 
 class Evidence(BaseModel):
@@ -73,19 +79,23 @@ class Diagnosis(BaseModel):
         return causes
 
     @model_validator(mode="after")
-    def _unknown_is_never_retry_safe(self) -> Diagnosis:
-        """Guardrail (Phase 5c): if the top cause is unknown, nobody knows a retry won't
-        repeat the failure, so retry_safe is forced to false whatever the model said. In
-        the v1 benchmark every unsafe "safe to retry" was an `unknown` OOM diagnosis."""
+    def _never_retry_safe(self) -> Diagnosis:
+        """Guardrail, in code rather than the prompt: retry_safe is forced to false whatever
+        the model said when the top cause is
+          unknown  (Phase 5c) nobody knows a retry won't repeat the failure; in the v1
+                   benchmark every unsafe "safe to retry" was an `unknown` OOM diagnosis;
+          oom      (Phase 5d) the memory limit and the input are unchanged on a retry; after
+                   5c, 2 of 9 correct `oom` diagnoses still called the retry safe."""
         top = self.root_causes[0]
-        if top.category == "unknown" and top.retry_safe:
+        note = NEVER_RETRY_SAFE.get(top.category)
+        if note and top.retry_safe:
             top.retry_safe = False
-            top.retry_safe_reason = (GUARDRAIL_NOTE + top.retry_safe_reason)[:600]
+            top.retry_safe_reason = (note + top.retry_safe_reason)[:600]
         return self
 
     @property
     def guardrail_applied(self) -> bool:
-        return self.top.retry_safe_reason.startswith(GUARDRAIL_NOTE)
+        return self.top.retry_safe_reason.startswith(tuple(NEVER_RETRY_SAFE.values()))
 
     @property
     def top(self) -> RootCause:

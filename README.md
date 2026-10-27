@@ -22,7 +22,7 @@ human then approves any retry from Slack.
 | 2 | Event stream: Redpanda producers, Delta bronze lander, deploy events, replay | ✅ done |
 | 3 | Detection: failed jobs, schema drift, late data, volume anomalies, suppression | ✅ done |
 | 4 | Diagnosis agent (Claude, tool use) + Slack Block Kit + FastAPI retry endpoint | ✅ done |
-| 5 | Benchmark: 25 labelled faults + 5 clean runs, accuracy/latency/cost, manual baseline | ✅ done ([results](#benchmark-results-phase-5b)) |
+| 5 | Benchmark: 25 labelled faults + 5 clean runs, accuracy/latency/cost, manual baseline | ✅ done ([results](#benchmark-results-phase-5b); post-hoc [5c](#phase-5c-post-hoc-tool-fixes-not-held-out), [5d](#phase-5d-post-hoc-round-2-not-held-out-the-last-round)) |
 | 6 | Terraform (plan only), CI, Grafana dashboard, final docs | ⏳ |
 
 ## Data: synthetic only
@@ -1146,6 +1146,7 @@ Outputs: `benchmark/results/runs/*/results.jsonl` (each diagnosis) and `judge.js
 | `retry_safe` correct (scored faults) | 86.4% (57/66) | 86.4% (19/22) |
 | Your manual time, 10 faults (median) | **175.0 s**, 6/10 right | |
 | Agent time on the same 10 (median, detection from first evidence + diagnosis) | **52.9 s**, 8/10 right | **49.6 s**, 8/10 right |
+| Diagnosis time only, like for like with yours (median) | **13.4 s** vs. your 175.0 s | **9.2 s** vs. your 175.0 s |
 
 **How to read these numbers:**
 - **25 faults + 5 clean runs, not 30 faults.** Detection is 25 of 25 faults, and the 5 clean
@@ -1503,8 +1504,8 @@ What this does and doesn't show:
 - **DQ: (b) half-worked, and introduced a bug.** Negative amounts went from root `mismatch`
   3/3 to `match` 3/3. The invalid payment code went from `mismatch` to `partial`, because
   string samples are JSON-encoded twice: the model saw `"\"upi-collect\""` and blamed
-  "literal quote characters". The fix is a one-line change. It is **not applied**, because
-  re-running to measure it would be another post-hoc iteration.
+  "literal quote characters". The fix is a one-line change, applied and measured in
+  [Phase 5d](#phase-5d-post-hoc-round-2-not-held-out-the-last-round).
 - **Guardrail (c), measured separately:** applied offline to v1's diagnoses, it alone
   makes `retry_safe` 66/66 correct, since every v1 error was an `unknown` OOM. In the
   post-hoc run it fired twice, both on the business dip, where `retry_safe` is unscored.
@@ -1531,19 +1532,137 @@ Spend for Phase 5c: Haiku run $0.1826 (180 calls), judges $0.0298 (156 calls), t
 | `test_benchmark_runner.py` | a labelled run writes its own folder, never resumes or touches the v1 file, and records the label and `guardrail_applied`; bad labels are refused |
 | `test_benchmark_analysis.py` | the guardrail counterfactual changes only `unknown` + safe rows; before/after rows per category and total; the before/after chart is valid SVG; agreement reads a CRLF/BOM/blank-line `scores.csv` |
 
+## Phase 5d: post-hoc round 2 (not held-out; the last round)
+
+**Read this as post-hoc.** Rounds 1 (Phase 5c) and 2 (here) were both tuned on the **same
+25 faults** after reading the previous round's failures. They show that these fixes remove
+these failures. They are **not** an estimate of accuracy on unseen faults. **This is the
+last round: there will be no further tuning on these 25 faults.** v1 stays the headline.
+v1's and round 1's results and report files are unchanged, and both re-score to their
+committed numbers (`rescored_equals_committed: {v1: true, round1: true}`).
+`prompts/diagnosis_v1.md` was not edited. Only Haiku was re-run.
+
+What changed (code, with tests):
+- **DQ double encoding fixed.** `get_dq_failures` now passes each sample value as itself,
+  so the outer JSON encodes it once: a text value reaches the model as `"upi-collect"`,
+  not `"\"upi-collect\""`. Numbers stay numbers.
+- **The guardrail now also covers `oom`.** In the `Diagnosis` model (code validation, not
+  the prompt), a top cause of `oom` forces `retry_safe = false`, with its own marked
+  reason: a retry with the same memory setting and input fails the same way. The
+  `unknown` rule is kept.
+- **Near-duplicate OOM lines collapse to one, with a count.** One OOM is re-raised several
+  times (`Caused by: ...`, `Lost task ...: ...`, different log prefixes). These count as
+  one error when the text from the error class on matches, ignoring numbers. The failure
+  callback keeps the first line, annotated `[sentinel: Nx in this log]`, and
+  `get_error_logs` returns `terminal_errors: [{"line": ..., "count": N}]`. On F-XZR2R6, round 1
+  showed the same error 5 times (the cap). Round 2 shows it once, with `count: 6`.
+
+How it was run (own lakes and run folder, `data/benchmark-posthoc-round-2`):
+
+```bash
+make benchmark-build LABEL=posthoc-round-2 BUILD_SPLIT=benchmark
+make benchmark DRY_RUN=1 MODEL=claude-haiku-5-5 REPEATS=3 LABEL=posthoc-round-2
+make benchmark MODEL=claude-haiku-5-5 REPEATS=3 LABEL=posthoc-round-2
+make benchmark-judge LABEL=posthoc-round-2
+make benchmark-posthoc LABEL=posthoc-round-2 PRIOR=posthoc-tool-fixes   # report/posthoc-round-2/ (no API)
+```
+
+The rebuilt lakes detect the same as v1: 55 raw findings → 26 primary incidents, 25/25
+faults, 0 on the 5 clean runs. The dry run estimated $0.227 (gate $0.554). The run was
+78/78 `ok`, and the judges had 0 errors.
+
+![v1 vs. rounds 1 and 2](benchmark/results/report/posthoc-round-2/charts/rounds.svg)
+
+| Haiku 5.5, 3 repeats | v1 (headline) | round 1 (post-hoc) | round 2 (post-hoc) |
+|---|---|---|---|
+| Top-1 accuracy (detected = end-to-end) | 81.3% (61/75) | 93.3% (70/75) | 92.0% (69/75) |
+| Top-3 accuracy | 82.7% | 96.0% | 96.0% |
+| Category right **and** root `match` | 50.7% (38/75) | 56.0% (42/75) | 58.7% (44/75) |
+| Root-cause judge: match / partial / mismatch | 42 / 23 / 10 | 46 / 29 / 0 | 47 / 26 / 2 |
+| Fix-quality judge mean | 2.37 | 2.65 | 2.61 |
+| `retry_safe` correct; unsafe called "safe"; safe called "unsafe" | 57/66; 9; 0 | 64/66; 2; 0 | 65/66; 0; 1 |
+| Brier score | 0.127 | 0.106 | 0.092 |
+| Faults right in 3/3 repeats, in 0/3 | 19, 4 | 22, 1 | 22, 1 |
+| Cost per diagnosis (mean) / latency (median) / tool calls (median) | $0.0025 / 12.8 s / 5 | $0.0023 / 12.6 s / 4 | $0.0024 / 12.2 s / 5 |
+
+Per true category (`report/posthoc-round-2/rounds.csv`). Root is match/partial/mismatch;
+cost is the mean per diagnosis; latency is the median.
+
+| Category | faults | top-1 v1 / r1 / r2 | root v1 / r1 / r2 | `retry_safe` correct v1 / r1 / r2 | cost v1 / r1 / r2 | latency v1 / r1 / r2 |
+|---|---:|---|---|---|---|---|
+| oom | 3 | 0/9 / 9/9 / 9/9 | 0/5/4 / 2/7/0 / 4/5/0 | 0/9 / 7/9 / **9/9** | $0.0024 / $0.0025 / $0.0023 | 11.8 / 12.7 / 11.3 s |
+| data_quality | 5 | 15/15 / 15/15 / 15/15 | 3/6/6 / 6/9/0 / 6/9/0 | 15/15 / 15/15 / 15/15 | $0.0027 / $0.0026 / $0.0027 | 12.5 / 12.7 / 13.1 s |
+| upstream_outage | 3 | 5/9 / 6/9 / 5/9 | 9/0/0 / 8/1/0 / 8/0/1 | 6/6 / 6/6 / **5/6** | $0.0026 / $0.0022 / $0.0025 | 14.0 / 12.3 / 13.6 s |
+| unknown (ambiguous) | 2 | 6/6 / 5/6 / **4/6** | 3/3/0 / 5/1/0 / 3/2/1 | 3/3 / 3/3 / 3/3 | $0.0025 / $0.0024 / $0.0026 | 13.7 / 12.7 / 13.3 s |
+| bad_deploy | 4 | 11/12 / 11/12 / 12/12 | 8/4/0 / 8/4/0 / 8/4/0 | 12/12 / 12/12 / 12/12 | $0.0027 / $0.0026 / $0.0025 | 14.9 / 13.7 / 13.3 s |
+| late_data | 3 | 9/9 / 9/9 / 9/9 | 7/2/0 / 5/4/0 / 6/3/0 | 9/9 / 9/9 / 9/9 | $0.0029 / $0.0026 / $0.0028 | 13.2 / 12.9 / 13.3 s |
+| schema_drift | 5 | 15/15 / 15/15 / 15/15 | 12/3/0 / 12/3/0 / 12/3/0 | 12/12 / 12/12 / 12/12 | $0.0018 / $0.0016 / $0.0018 | 10.5 / 9.4 / 9.2 s |
+| **all** | 25 | 61/75 / 70/75 / 69/75 | 42/23/10 / 46/29/0 / 47/26/2 | 57/66 / 64/66 / 65/66 | $0.0025 / $0.0023 / $0.0024 | 12.8 / 12.6 / 12.2 s |
+
+What round 2 does and doesn't show:
+- **OOM `retry_safe`: 9/9.** The oom guardrail fired once (F-ZR22VD r2), and the other
+  8 repeats already said "not safe". Applied offline to v1, both guardrails together give
+  66/66. Root cause is 4/5/0 vs. round 1's 2/7/0. No tool shows the memory setting yet
+  (see [Future work](#future-work)), so read that +2 as within the noise floor.
+- **DQ encoding: the misreading is gone.** On the invalid payment code, all 3 repeats now
+  name `upi-collect` as an unexpected value. None blames quote characters any more. The
+  judge scored it match 1, partial 2 (round 1: partial 3).
+- **The `unknown` guardrail has its first visible cost.** On the late upstream DAG
+  (F-ED2JNB, where a retry *is* safe), one repeat answered `unknown`, and the guardrail
+  forced `retry_safe` to false. That is the single `retry_safe` miss and the one wrong
+  `unknown`. It is the trade the rule makes: a missed safe retry instead of an unsafe one.
+- **Worse, unrelated to the changes:** the business dip (truth `unknown`) got
+  `data_quality` in 2 of 3 repeats (round 1: 1 of 3), with one root `mismatch`. None of
+  the three changes touches that night's evidence. The same prompt gap showed in v1 and
+  round 1, and it moves with run-to-run variation. Upstream top-1 went 6/9 → 5/9 for the
+  same reason (the late DAG is still read as `late_data`).
+- **Noise floor:** categories no change touched moved by up to 2 root verdicts. Round 2's
+  overall top-1 (69/75) is within one fault-repeat of round 1's (70/75).
+
+Spend for Phase 5d: Haiku run $0.1899 (189 calls), judges $0.0294 (156 calls), total
+**$0.2193**. The ledger is now **$1.5785 of $10** (1,159 calls).
+
+### Tests (Phase 5d)
+
+| Test file | What it proves |
+|---|---|
+| `test_diagnose_tools.py` | a text sample value appears JSON-encoded once (`{"value": "upi-collect", ...}`, no `\"`), real quotes are escaped once, numbers stay typed; `terminal_errors` items carry a count |
+| `test_diagnose_schema.py` | `oom` + `retry_safe: true` → false with the oom guardrail note; idempotent; only the top cause counts; honest answers untouched; the other five categories are never forced |
+| `test_terminal_errors.py` | the real re-raise shapes (plain, `Caused by:`, `Lost task ...:`, different numbers) collapse to the first line with count 4; a collapsed line's count is kept and its copies in the tail aren't added again |
+| `test_airflow_callbacks.py` | a re-raised OOM before the tail is kept once in the head, annotated `[sentinel: 3x in this log]` |
+| `test_benchmark_analysis.py` | the counterfactual covers `oom` when asked; per-category rows for v1 / round 1 / round 2 (top-1, root verdicts, retry, cost, latency); per-fault rows; the rounds chart is valid SVG |
+
+## Future work
+
+- **A task-environment tool, as the fix for the OOM root-cause `partial` results.** The OOM
+  faults run with `JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=<n>k`. No tool shows that, so
+  the model can name the `OutOfMemoryError` but can't say why the limit was so low, and
+  the judge scores most OOM root causes `partial` (round 2: 4 match / 5 partial). A
+  read-only tool returning the failed task's JVM/Spark memory settings (redacted like the
+  other tools) would close that gap. It is **not built**. It would be measured on *new*
+  faults, not these 25.
+- The v2 prompt proposed in Phase 5b (late upstream DAG vs. `late_data`, the business dip)
+  is still a proposal. Like the tool above, it would be evaluated on a fresh fault set.
+
 ## Benchmark honesty notes
 
 - **The manual baseline is only partially blind.** The faults are injected in randomized
   order and labels stay hidden until each diagnosis is recorded. But the person timing
   the manual baseline (the author) saw the fault *types* while building the harness, so
   they had prior knowledge of the category set.
-- Only 10 of the 30 faults (about 2 per category) are timed by hand. The other 20 are
-  reported as "not manually timed" and are never estimated.
+- Only 10 of the 30 scenarios (25 faults + 5 clean runs; about 2 per category) are timed
+  by hand. The other 20 are reported as "not manually timed" and are never estimated.
+- **Diagnosis time, like for like:** your 175.0 s (median, from the alert) vs. the agent's
+  13.4 s (Haiku) / 9.2 s (Sonnet) for diagnosis only. The agent's 52.9 s / 49.6 s
+  *includes* detection (about 40 s from first evidence to incident), so it is not the
+  number to compare with yours.
 - Labels: trial 1 was revealed right after it was recorded (`REVEAL=each`); trials 2-10
   were revealed only after all ten were recorded (`REVEAL=end`). Result: 6 of 10 right,
   median 175.0 s.
-- Phase 5c is labelled post-hoc everywhere it appears. Its fixes were chosen after seeing
-  v1's failures on the same faults, and it never replaces a v1 number.
+- Phases 5c and 5d (post-hoc rounds 1 and 2) are labelled post-hoc everywhere they
+  appear. Their fixes were chosen after seeing the previous round's failures on the same
+  25 faults, and they never replace a v1 number. Round 2 was the last: no further tuning
+  on these faults.
 - Nothing in Phase 5b was re-run to get a better number. The prompt wasn't edited, the
   detector wasn't tuned, and every diagnosis is in the results files.
 - The author also saw the fault *templates* (the kinds of fault and their parameter

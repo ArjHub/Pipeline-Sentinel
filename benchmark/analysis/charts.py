@@ -22,6 +22,10 @@ SERIES = {
     # on the surface, so every bar carries a direct k/n label and the CSV is the table).
     "v1": "#2a78d6",
     "posthoc": "#eda100",
+    # Phase 5d: round 1 keeps its yellow (the "posthoc" key above); round 2 takes slot 5
+    # (magenta; also below 3:1, same relief: direct k/n labels and rounds.csv).
+    "round1": "#eda100",
+    "round2": "#e87ba4",
 }
 NAMES = {
     "haiku": "Haiku 5.5",
@@ -29,6 +33,8 @@ NAMES = {
     "human": "Manual (you)",
     "v1": "v1 (Phase 5b)",
     "posthoc": "Post-hoc tool fixes",
+    "round1": "Post-hoc round 1",
+    "round2": "Post-hoc round 2",
 }
 RAMP = ["#f4f8fd", "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 FONT = "font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'"
@@ -98,6 +104,17 @@ def before_after(before: dict, after: dict) -> str:
         "Haiku 5.5: v1 vs. post-hoc tool fixes (not held-out)",
         "Top-1 accuracy by true category, 3 repeats each; labels are correct/diagnoses. "
         "Same 25 faults, fixes chosen after seeing v1.",
+        top=80,
+    )
+
+
+def rounds(per_cat: dict[str, dict]) -> str:
+    """Phase 5d: Haiku v1 vs. post-hoc rounds 1 and 2, per true category."""
+    return category_bars(
+        per_cat,
+        "Haiku 5.5: v1 vs. post-hoc rounds 1 and 2 (not held-out)",
+        "Top-1 accuracy by true category, 3 repeats each; labels are correct/diagnoses. "
+        "Same 25 faults; both rounds tuned after seeing them.",
         top=80,
     )
 

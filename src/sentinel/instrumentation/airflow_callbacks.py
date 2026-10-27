@@ -21,7 +21,7 @@ from typing import Any
 from sentinel.events.models import JobLog, RunContext, TaskRun
 from sentinel.events.sinks import sink_from_env
 from sentinel.instrumentation.context import code_version_for
-from sentinel.instrumentation.terminal_errors import terminal_error_lines
+from sentinel.instrumentation.terminal_errors import terminal_errors
 
 log = logging.getLogger("sentinel.callbacks")
 
@@ -56,7 +56,8 @@ def log_tail(dag_id: str, run_id: str, task_id: str, try_number: int | None) -> 
                 text = fh.read().decode("utf-8", errors="replace")
             tail = "\n".join(text.splitlines()[-LOG_TAIL_LINES:])
             with path.open(encoding="utf-8", errors="replace") as fh:
-                earlier = [line for line in terminal_error_lines(fh) if line not in tail]
+                # one line per distinct error, annotated with how often it occurred
+                earlier = [e.annotated() for e in terminal_errors(fh) if e.line not in tail]
             if not earlier:
                 return tail[-LOG_TAIL_MAX_CHARS:]
             head = "\n".join([EARLIER_HEADER, *earlier, TAIL_HEADER]) + "\n"

@@ -133,6 +133,18 @@ def test_terminal_jvm_error_outside_the_tail_is_kept(sink, tmp_path, monkeypatch
     assert len(tail) <= cb.LOG_TAIL_MAX_CHARS
 
 
+def test_reraised_oom_is_kept_once_with_a_count(sink, tmp_path, monkeypatch) -> None:
+    # Phase 5d: PySpark re-raises one OOM several times ("Caused by: ...", "Lost task
+    # ...: ..."); the head keeps the first line once, with how often it occurred.
+    oom = "java.lang.OutOfMemoryError: Cannot reserve 8192 bytes of direct buffer memory"
+    reraised = [oom, f"Caused by: {oom}", f"WARN TaskSetManager: Lost task 3.0: {oom}"]
+    teardown = [f"py4j.clientserver - Closing down clientserver connection {i}" for i in range(150)]
+    ti = _write_log(tmp_path, monkeypatch, ["starting job", *reraised, *teardown, "exit code 1"])
+    cb.on_failure(_ctx(ti, RuntimeError("Bash command failed. exit code 1")))
+    head = sink.events[1].payload.traceback.split(cb.TAIL_HEADER)[0]
+    assert head.splitlines() == [cb.EARLIER_HEADER, f"{oom} [sentinel: 3x in this log]"]
+
+
 def test_terminal_error_already_in_the_tail_is_not_repeated(sink, tmp_path, monkeypatch) -> None:
     ti = _write_log(tmp_path, monkeypatch, [f"line {i}" for i in range(100)] + OOM.splitlines())
     cb.on_failure(_ctx(ti, RuntimeError("exit code 1")))

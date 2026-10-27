@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sentinel.diagnose.schema import (
     CATEGORIES,
     GUARDRAIL_NOTE,
+    OOM_GUARDRAIL_NOTE,
     OUTPUT_JSON_SCHEMA,
     Diagnosis,
     unknown,
@@ -158,3 +159,37 @@ def test_guardrail_note_fits_the_reason_limit() -> None:
         bad(root_causes=[{**UNKNOWN_SAFE, "retry_safe_reason": "x" * 600}])
     )
     assert len(d.top.retry_safe_reason) == 600 and d.guardrail_applied
+
+
+OOM_SAFE = {
+    **UNKNOWN_SAFE,
+    "category": "oom",
+    "explanation": "java.lang.OutOfMemoryError: Cannot reserve direct buffer memory",
+    "evidence": [
+        {"kind": "log_line", "source_tool": "get_error_logs", "quote": "OutOfMemoryError"}
+    ],
+    "retry_safe_reason": "transient memory pressure",
+}
+
+
+def test_guardrail_forces_retry_unsafe_when_the_top_cause_is_oom() -> None:
+    # Phase 5d: after the 5c tool fixes, 2 of 9 correct oom diagnoses still said "safe".
+    d = Diagnosis.model_validate(bad(root_causes=[OOM_SAFE]))
+    assert d.retry_safe is False and d.guardrail_applied
+    assert d.top.retry_safe_reason == OOM_GUARDRAIL_NOTE + "transient memory pressure"
+    again = Diagnosis.model_validate(d.model_dump())
+    assert again.top.retry_safe_reason == d.top.retry_safe_reason
+
+
+def test_oom_guardrail_only_looks_at_the_top_cause_and_keeps_honest_answers() -> None:
+    safe_drift = {**GOOD["root_causes"][0], "retry_safe": True, "retry_safe_reason": "fixed"}
+    lower_oom = {**OOM_SAFE, "confidence": 0.1}
+    d = Diagnosis.model_validate(bad(root_causes=[safe_drift, lower_oom]))
+    assert d.retry_safe is True and not d.guardrail_applied
+    honest = Diagnosis.model_validate(bad(root_causes=[{**OOM_SAFE, "retry_safe": False}]))
+    assert (
+        not honest.guardrail_applied and honest.top.retry_safe_reason == "transient memory pressure"
+    )
+    for cat in ("schema_drift", "late_data", "bad_deploy", "upstream_outage", "data_quality"):
+        other = Diagnosis.model_validate(bad(root_causes=[{**OOM_SAFE, "category": cat}]))
+        assert other.retry_safe is True and not other.guardrail_applied  # only unknown, oom

@@ -27,7 +27,7 @@ from sentinel.detect.config import DetectionConfig
 from sentinel.detect.schema_drift import diff
 from sentinel.detect.store import incidents_path, read_incidents
 from sentinel.diagnose.redact import clean
-from sentinel.instrumentation.terminal_errors import terminal_error_lines
+from sentinel.instrumentation.terminal_errors import terminal_errors
 
 LOG_LEVELS = ("ERROR", "CRITICAL", "WARNING")
 
@@ -173,9 +173,12 @@ class Toolbox:
             # Scanned before truncation, so a fatal JVM error deep in the traceback text
             # (or kept by the callback ahead of the tail) is never cut away.
             text = "\n".join(filter(None, (p.get("message"), p.get("traceback"))))
-            fatal = terminal_error_lines(text.splitlines())
+            # Near-duplicates (the same error re-raised) collapse to one line with a count.
+            fatal = terminal_errors(text.splitlines())
             if fatal:
-                item["terminal_errors"] = [self._c(line) for line in fatal]
+                item["terminal_errors"] = [
+                    {"line": self._c(e.line), "count": e.count} for e in fatal
+                ]
             item["traceback_tail"] = self._c(p.get("traceback"), self.traceback_max_chars)
             items.append(item)
         for r in self.bronze.rows("job_metrics"):
@@ -381,12 +384,23 @@ class Toolbox:
         out["unexpected_count"] = e.get("unexpected_count")
         if e.get("unexpected_values") is not None:
             out["unexpected_values_sample"] = [
-                {"value": self._c(json.dumps(v.get("value"), default=str), 80), "count": v["count"]}
+                {"value": self._value(v.get("value")), "count": v["count"]}
                 for v in e["unexpected_values"]
             ]
         if e.get("missing_count") is not None:
             out["null_count"] = e["missing_count"]
         return out
+
+    def _value(self, v: Any) -> Any:
+        """A sample value as itself, so the outer JSON encodes it once: a string stays a
+        string (Phase 5c json.dumps'd it first, and the model read the escaped quotes in
+        "\"upi-collect\"" as literal quote characters); numbers, bools and None stay
+        typed. Anything else (dates, decimals) becomes its str()."""
+        if isinstance(v, str):
+            return self._c(v, 80)
+        if v is None or isinstance(v, bool | int | float):
+            return v
+        return self._c(str(v), 80)
 
 
 _SCOPE_PROPS = {
@@ -419,7 +433,8 @@ TOOL_DEFS: list[dict[str, Any]] = [
         "ERROR/WARNING log lines and failed task attempts (with traceback tails) for one "
         "pipeline run. Newest first. Redacted and truncated. `terminal_errors`, when present, "
         "lists fatal JVM/process errors (e.g. java.lang.OutOfMemoryError) found anywhere in "
-        "the log, even outside the tail.",
+        "the log, even outside the tail: each distinct error once (its first line), with "
+        "`count` = how many times it (or a near-duplicate re-raise of it) occurred.",
         {
             "task_id": {"type": "string", "description": "Only this task."},
             "limit": {"type": "integer", "description": "Max items (<= 20)."},

@@ -246,6 +246,70 @@ def test_before_after_chart_is_well_formed_svg() -> None:
     assert "v1 (Phase 5b)" in svg and "Post-hoc tool fixes" in svg and "not held-out" in svg
 
 
+def test_posthoc_guardrail_counterfactual_can_cover_oom_too() -> None:
+    # Phase 5d: the extended guardrail, applied offline to earlier rounds.
+    oom = _fault("F-1", "oom", template="oom.direct_memory")
+    retry = {"oom.direct_memory": False}
+    rows = [_row(_result("F-1", "oom", retry=True), oom, retry)]
+    assert posthoc.with_guardrail(rows)[0]["retry_pred"] is True  # 5c rule: unknown only
+    both = posthoc.with_guardrail(rows, ("unknown", "oom"))
+    assert both[0]["retry_pred"] is False and both[0]["retry_correct"] is True
+
+
+def test_posthoc_rounds_rows_compare_every_run_per_category() -> None:
+    oom = _fault("F-1", "oom", template="oom.direct_memory")
+    retry = {"oom.direct_memory": False}
+    judged = {
+        (f"F-1|INC-F-1|{r}", "root"): {"verdict": v}
+        for r, v in enumerate(["match", "partial", "partial"])
+    }
+
+    def run(cat, safe, cost=0.003):
+        rows = [
+            _row(
+                {
+                    **_result("F-1", cat, repeat=r, retry=safe),
+                    "cost_usd": cost,
+                    "latency_s": 10.0 + r,
+                },
+                oom,
+                retry,
+                judged,
+            )
+            for r in range(3)
+        ]
+        return rows
+
+    runs = {
+        "v1": run("unknown", True),
+        "round1": run("oom", True),
+        "round2": run("oom", False, 0.002),
+    }
+    rows = {r["category"]: r for r in posthoc.rounds_rows(runs)}
+    o = rows["oom"]
+    assert (o["v1_top1"], o["round1_top1"], o["round2_top1"]) == ("0/3", "3/3", "3/3")
+    assert o["round2_root_m_p_x"] == "1/2/0"
+    assert (o["round1_retry_correct"], o["round2_retry_correct"]) == ("0/3", "3/3")
+    assert (o["round1_unsafe_called_safe"], o["round2_unsafe_called_safe"]) == (3, 0)
+    assert o["round2_mean_cost_usd"] == 0.002 and o["round2_median_latency_s"] == 11.0
+    assert rows["all"]["faults"] == 1
+    [f] = posthoc.runs_fault_rows(runs)
+    assert (
+        f["v1_predicted"] == "unknown unknown unknown"
+        and f["round2_retry_safe"] == "False False False"
+    )
+    assert f["changed"]  # v1 vs. the last round
+
+
+def test_rounds_chart_is_well_formed_svg() -> None:
+    def per(k):
+        return {"oom": {"top1": {"k": k, "n": 9, "rate": k / 9}, "top3": {}, "faults": 3}}
+
+    svg = charts.rounds({"v1": per(0), "round1": per(9), "round2": per(9)})
+    xml.dom.minidom.parseString(svg)
+    assert "Post-hoc round 1" in svg and "Post-hoc round 2" in svg and "not held-out" in svg
+
+
 def test_agreement_reads_a_spreadsheet_saved_scores_csv(tmp_path, monkeypatch) -> None:
     # The scored sheet came back with CRLF line ends and a leading blank line.
     (tmp_path / "key.json").write_text('{"S01": {"run": "r", "key": "k"}}')

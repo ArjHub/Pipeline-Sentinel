@@ -89,7 +89,7 @@ break-it: ## Inject a fault on the live stack: FAULT=missing_amount|volume_drop|
 	bash scripts/break_it.sh $(FAULT) $(DATE)
 
 # --- Phase 5 benchmark (python -m benchmark.harness; see README "Benchmark harness") ---
-# LABEL=<slug> (Phase 5c: posthoc-tool-fixes) builds and runs against its own scenario
+# LABEL=<slug> (Phase 5c: posthoc-tool-fixes; 5d: posthoc-round-2) builds and runs against its own scenario
 # lakes in data/benchmark-<slug> and its own run folder; the unlabelled v1 lakes and
 # results are never touched.
 BENCH_WORK = $(if $(LABEL),-e SENTINEL_BENCHMARK_WORK=/workspace/data/benchmark-$(LABEL))
@@ -132,8 +132,9 @@ benchmark-human-sample: ## Phase 5b: blind 15-diagnosis fix-quality sheet for a 
 benchmark-agreement: ## Phase 5b: judge vs. human agreement (after scores.csv is filled in)
 	$(BENCH) "$(BENCH_AN) agreement"
 
-benchmark-posthoc: ## Phase 5c: score a labelled run vs. v1 (LABEL=posthoc-tool-fixes; no API)
-	$(BENCH) "$(BENCH_AN) --prompt $(PROMPT) posthoc --label $(LABEL) --model $(BENCH_MODEL)"
+benchmark-posthoc: ## Phase 5c/5d: score a labelled run vs. v1 (LABEL= [PRIOR="r1 ..."]; no API)
+	$(BENCH) "$(BENCH_AN) --prompt $(PROMPT) posthoc --label $(LABEL) --model $(BENCH_MODEL) \
+	  $(foreach p,$(PRIOR),--prior $(p))"
 
 benchmark-status: ## Scenario and result counts (no labels)
 	$(BENCH) "$(BENCH_PY) status"

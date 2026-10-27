@@ -202,4 +202,49 @@ of about ±2 per category are run-to-run (model + judge) variation. The OOM cate
   different timestamps or a `Caused by:` prefix.
 - **Extend the guardrail to `oom`:** an OOM is never retry-safe without a config change.
 
-Each of these would be another post-hoc change on the same faults.
+Each of these would be another post-hoc change on the same faults. Phase 5d (section 11) built the first, third and
+fourth. The task-environment tool stays future work.
+
+## 11. Phase 5d: post-hoc round 2 (not held-out; the last round)
+
+Round 2 is also **post-hoc**. Its three changes were chosen after reading round 1's
+failures (section 10), on the **same 25 faults**. Rounds 1 and 2 are not held-out. **No
+further tuning will be done on these 25 faults.** v1 stays the headline, and v1's and
+round 1's results are unchanged (both re-score to their committed metrics). The prompt was
+not edited. Haiku 5.5 only, 3 repeats, run label `posthoc-round-2`, on its own lakes
+(`data/benchmark-posthoc-round-2`). Numbers: `report/posthoc-round-2/` (`rounds.csv`,
+`faults.csv`, `metrics.json`, `charts/rounds.svg`).
+
+The changes:
+- **DQ double encoding fixed:** sample values go through as JSON values (a string once
+  encoded, numbers typed).
+- **Guardrail extended to `oom`:** a top cause of `oom` forces `retry_safe = false`, in
+  `Diagnosis` validation, not the prompt. The `unknown` rule is kept.
+- **Near-duplicate terminal errors collapse:** one line per error, the first occurrence,
+  with a count (the callback annotates `[sentinel: Nx in this log]`; the tool returns
+  `{"line", "count"}`).
+
+| Failure | v1 | round 1 | round 2 | What happened |
+|---|---|---|---|---|
+| OOM `retry_safe` | 0/9 | 7/9 | **9/9** | The oom guardrail fired once (F-ZR22VD r2). The other 8 repeats said "not safe" by themselves. Applied offline to v1, both guardrails give 66/66 |
+| OOM root cause | 0/5/4 | 2/7/0 | 4/5/0 | Within the ±2 noise floor: the collapse removes repetition but adds no new fact. The memory **setting** is still invisible; that is the task-environment tool (future work, not built) |
+| Invalid payment code (F-8EHKFX) root | mismatch 3/3 | partial 3/3 | match 1, partial 2 | The encoding bug is gone: all 3 repeats name `upi-collect` as an unexpected value, and none mentions quote characters. The remaining `partial`s say "a new or renamed method, or corrupted values; the tools can't tell which", which is honest |
+| Late upstream DAG (F-ED2JNB) | `late_data` 3/3 | `late_data` 3/3 | `late_data` 2, `unknown` 1 | The prompt gap from v1 is unchanged. The `unknown` repeat was forced to `retry_safe = false` by the **5c unknown rule**, but a retry is safe here. That is the single `retry_safe` miss in round 2, and the first time the unknown rule cost a correct answer: it trades a missed safe retry for never offering an unsafe one |
+| Business dip (truth `unknown`) | 3/3 | 2/3 | **1/3** | 2 repeats said `data_quality`, one judged root `mismatch`. None of the changes touches this night's evidence. Same prompt gap as v1 and round 1 ("volume far off normal" is listed under `data_quality`), moving with run-to-run variation |
+| Bad deploy read as DQ (F-5RX3GD) | 2/3 | 2/3 | 3/3 | Not caused by a change; variation |
+
+**Overall (Haiku ×3):**
+- Top-1: v1 61/75, round 1 70/75, round 2 69/75.
+- Root match/partial/mismatch: 42/23/10, then 46/29/0, then 47/26/2.
+- `retry_safe` correct: 57/66, then 64/66, then 65/66. Round 2 called 0 unsafe retries "safe" and 1 safe retry "unsafe".
+- Brier: 0.127, then 0.106, then 0.092.
+- Mean cost: $0.0025, then $0.0023, then $0.0024. Median latency: 12.8 s, then 12.6 s, then 12.2 s.
+
+Round 2 differs from round 1 on top-1 by one fault-repeat, which is noise. Its real
+effects are narrow: `retry_safe` on OOM, and the DQ misreading removed.
+
+**Remaining, not built:**
+- A task-environment tool, the fix for the OOM `partial`s. It is listed as future work in
+  the README and is to be measured on new faults.
+- The v2 prompt for the late-DAG and business-dip category boundaries (still a proposal).
+

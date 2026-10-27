@@ -111,7 +111,9 @@ def test_terminal_jvm_error_survives_traceback_truncation(tmp_path) -> None:
     box = Toolbox(tmp_path, load_config(), build_lake(tmp_path, extra=[oom]))
     out, _ = call(box, "get_error_logs", task_id="ingest_orders")
     [item] = [i for i in out["untrusted_data"] if i["message"].startswith("task ingest_orders")]
-    assert item["terminal_errors"] == [": java.lang.OutOfMemoryError: Java heap space"]
+    assert item["terminal_errors"] == [
+        {"line": ": java.lang.OutOfMemoryError: Java heap space", "count": 1}
+    ]
     assert "OutOfMemoryError" not in item["traceback_tail"]  # truncated away, as before
     others = [i for i in out["untrusted_data"] if i is not item]
     assert all("terminal_errors" not in i for i in others)  # absent when there are none
@@ -165,15 +167,36 @@ def test_dq_failures_report_the_real_unexpected_values(tmp_path) -> None:
     )
     out, _ = call(box, "get_dq_failures", pipeline="payments_etl")
     amount, method_out, old = out["untrusted_data"][0]["failed_expectations"]
-    assert amount["unexpected_values_sample"] == [
-        {"value": "-120.5", "count": 1},
-        {"value": "-3", "count": 1},
+    assert amount["unexpected_values_sample"] == [  # typed, not strings (Phase 5d)
+        {"value": -120.5, "count": 1},
+        {"value": -3, "count": 1},
     ]
     assert amount["null_count"] == 0 and "observed_value" not in amount
-    assert method_out["unexpected_values_sample"] == [{"value": '"UPI-COLLECT"', "count": 812}]
+    assert method_out["unexpected_values_sample"] == [{"value": "UPI-COLLECT", "count": 812}]
     assert old == {
         "expectation_type": "expect_column_values_to_not_be_null",
         "column": "paid_ts",
         "unexpected_count": None,
     }
     assert '"null"' not in json.dumps(out)
+
+
+def test_text_sample_values_are_json_encoded_once(tmp_path) -> None:
+    # Phase 5d: 5c json.dumps'd each value and then the whole output again, so the model
+    # read "\\"upi-collect\\"" and blamed literal quote characters in the data.
+    method = ExpectationOutcome(
+        expectation_type="expect_column_values_to_be_in_set",
+        column="method",
+        success=False,
+        unexpected_count=812,
+        unexpected_values=[
+            UnexpectedValue(value="upi-collect", count=800),
+            UnexpectedValue(value='say "hi"', count=12),  # real quotes stay, escaped once
+        ],
+        missing_count=0,
+    )
+    box = Toolbox(tmp_path, load_config(), build_lake(tmp_path, extra=[_dq_event([method])]))
+    text, _ = box.call("get_dq_failures", {"pipeline": "payments_etl"})
+    assert '{"value": "upi-collect", "count": 800}' in text
+    assert '{"value": "say \\"hi\\"", "count": 12}' in text
+    assert '\\"upi-collect' not in text and "\\\\" not in text
