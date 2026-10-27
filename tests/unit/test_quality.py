@@ -114,3 +114,19 @@ def test_revenue_paid_cannot_exceed_gross(clean_lake) -> None:
     df.loc[df.index[0], "paid_revenue"] = df.loc[df.index[0], "gross_revenue"] + 1
     result, _ = _validate(df, "daily_revenue")
     assert _failed(result) == {("expect_column_pair_values_a_to_be_greater_than_b", None)}
+
+
+def test_column_failures_carry_the_actual_unexpected_values(clean_lake) -> None:
+    # Phase 5c: GX computes a sample of the bad values; the event used to drop it, so the
+    # diagnosis tool could only say observed_value "null" for negatives and bad codes.
+    df = _orders(clean_lake)
+    df.loc[df.index[:3], "amount"] = -5.0
+    df.loc[df.index[3:6], "currency"] = "XYZ"
+    result, sink = _validate(df, "orders")
+    by_col = {r.column: r for r in result.results if not r.success}
+    assert [(v.value, v.count) for v in by_col["amount"].unexpected_values] == [(-5.0, 3)]
+    assert [(v.value, v.count) for v in by_col["currency"].unexpected_values] == [("XYZ", 3)]
+    assert by_col["amount"].missing_count == 0
+    assert all(r.unexpected_values is None for r in result.results if r.success)
+    [event] = sink.events
+    assert event.payload.results == result.results  # what reaches bronze

@@ -199,6 +199,18 @@
           "title": "Expectation Type",
           "type": "string"
         },
+        "missing_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Missing Count"
+        },
         "observed_value": {
           "default": null,
           "title": "Observed Value"
@@ -230,6 +242,21 @@
           ],
           "default": null,
           "title": "Unexpected Percent"
+        },
+        "unexpected_values": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/UnexpectedValue"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unexpected Values"
         }
       },
       "required": [
@@ -535,9 +562,27 @@
       ],
       "title": "TaskRun",
       "type": "object"
+    },
+    "UnexpectedValue": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "title": "UnexpectedValue",
+      "type": "object"
     }
   },
-  "$id": "https://github.com/ArjHub/Pipeline-Sentinel/schemas/event/1.1",
+  "$id": "https://github.com/ArjHub/Pipeline-Sentinel/schemas/event/1.2",
   "additionalProperties": false,
   "properties": {
     "code_version": {
@@ -617,7 +662,7 @@
       "title": "Run Id"
     },
     "schema_version": {
-      "default": "1.1",
+      "default": "1.2",
       "title": "Schema Version",
       "type": "string"
     },
@@ -653,6 +698,6 @@
     "pipeline",
     "payload"
   ],
-  "title": "PipelineSentinel event v1.1",
+  "title": "PipelineSentinel event v1.2",
   "type": "object"
 }

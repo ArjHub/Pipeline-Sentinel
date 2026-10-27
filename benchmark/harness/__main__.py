@@ -102,6 +102,7 @@ def cmd_run(args, settings) -> int:
         resume=args.resume,
         retry_errors=args.retry_errors,
         judge=args.judge,
+        label=args.label,
     )
 
 
@@ -140,6 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--resume", action="store_true")
     r.add_argument("--retry-errors", action="store_true")
     r.add_argument("--judge", action="store_true", help="include the judge in the estimate")
+    r.add_argument("--label", default="", help="separate run folder, e.g. posthoc-tool-fixes")
     m = sub.add_parser("manual-trial")
     m.add_argument("--reveal", default="each", choices=["each", "end"])
     i = sub.add_parser("inspect")

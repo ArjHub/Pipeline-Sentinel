@@ -22,7 +22,7 @@ human then approves any retry from Slack.
 | 2 | Event stream: Redpanda producers, Delta bronze lander, deploy events, replay | ✅ done |
 | 3 | Detection: failed jobs, schema drift, late data, volume anomalies, suppression | ✅ done |
 | 4 | Diagnosis agent (Claude, tool use) + Slack Block Kit + FastAPI retry endpoint | ✅ done |
-| 5 | Benchmark: 30 labelled faults, accuracy/latency/cost, manual baseline | ✅ done ([results](#benchmark-results-phase-5b)) |
+| 5 | Benchmark: 25 labelled faults + 5 clean runs, accuracy/latency/cost, manual baseline | ✅ done ([results](#benchmark-results-phase-5b)) |
 | 6 | Terraform (plan only), CI, Grafana dashboard, final docs | ⏳ |
 
 ## Data: synthetic only
@@ -881,7 +881,8 @@ during a run or muddies its cost and latency. The harness starts every diagnosis
 
 ### The faults
 
-39 faults in a sealed catalog: **30 benchmark + 9 dev** (the dev set is only for
+39 scenarios in a sealed catalog: **30 benchmark (25 faults + 5 clean runs) + 9 dev** (7
+faults + 2 clean; the dev set is only for
 tuning a possible v2 prompt, and shares no fault with the benchmark). They are drawn with
 a fixed seed (`config/benchmark.toml`, `[catalog] seed`) from the templates in
 `benchmark/harness/templates.py`. Each template is a kind of fault with a pool of
@@ -902,12 +903,12 @@ environment, a delivered file or an upstream DAG run is what goes wrong:
 |---|---|
 | source problems (schema drift, late data, data quality, a business dip) | The generate task (the "source system" extract) goes through a source shim that delivers the faulty data: dropped / renamed / retyped / added columns, a stale or previous-day extract, an extract that stops early, NULLs, a duplicated load, out-of-range or invalid values, shifted timestamps. Because the change happens before the file is written, the generate task's own metrics and logs describe what was really delivered. |
 | bad deploy | A **real code regression** applied to the build copy of one job (a cast, a required-column list, an upper/title-casing), plus the `deploy_event` that shipped it: git SHA, changed file, author, commit message, a few hours before the nightly run. The regressed job then runs. |
-| OOM | A **real Spark failure**: the task runs with `JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=<n>k`, the JVM really hits `java.lang.OutOfMemoryError: Cannot reserve ... bytes of direct buffer memory` and dies, and PySpark fails the way it does when its JVM goes away (`Py4JNetworkError`, `ConnectionRefusedError`). Found by experiment: a larger input alone doesn't OOM these jobs (Spark streamed a 400x orders file in 512 MB), so a memory *limit* is the realistic trigger here. The JVM's own `OutOfMemoryError` line is printed early and scrolls out of the 60-line log tail the Airflow callback keeps, which is all `get_error_logs` sees. That is how the real stack behaves; it was not changed (and it decides the OOM results below). |
+| OOM | A **real Spark failure**: the task runs with `JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=<n>k`, the JVM really hits `java.lang.OutOfMemoryError: Cannot reserve ... bytes of direct buffer memory` and dies, and PySpark fails the way it does when its JVM goes away (`Py4JNetworkError`, `ConnectionRefusedError`). Found by experiment: a larger input alone doesn't OOM these jobs (Spark streamed a 400x orders file in 512 MB), so a memory *limit* is the realistic trigger here. The JVM's own `OutOfMemoryError` line is printed early and scrolls out of the 60-line log tail the Airflow callback keeps, which is all `get_error_logs` saw in v1. That is how the real stack behaves, and it decides the v1 OOM results below. Phase 5c (post-hoc) keeps terminal JVM error lines from anywhere in the log; see [Phase 5c](#phase-5c-post-hoc-tool-fixes-not-held-out). |
 | upstream outage | An upstream DAG run never starts or starts late (the downstream sensor times out with Airflow's real message after 30 min), or the source's export endpoint is unreachable (a real failed HTTP call, retried, then raised). |
 | novel / ambiguous | A delivered file with no read permission (a real Spark read error; label `unknown`), a real 36% business dip with valid data (label `unknown`), local IST times written as UTC (label `data_quality`, `unknown` accepted). The dev split also has a gzip file under a `.csv` name. |
 | clean | Nothing injected. |
 
-The 30 benchmark faults: schema drift 5 (drop ×2, rename, retype, add), late data 3
+The 30 benchmark scenarios, 25 faults + 5 clean runs: schema drift 5 (drop ×2, rename, retype, add), late data 3
 (previous-day file, stale snapshot, truncated extract), OOM 3, bad deploy 4, upstream
 outage 3 (late DAG, missing DAG, unreachable source), data quality 5 (duplicate load, null
 spike, invalid values, out-of-range, IST-as-UTC), `unknown` 2 (business dip, permission
@@ -1059,7 +1060,7 @@ Dry run on the built scenarios (2026-10-25, ledger spent $0.10107513):
 | Haiku 5.5 | 3 | 78 | $0.227 | $0.554 | $1.877 | $0.655 |
 | Sonnet 5.5 | 1 | 26 | $0.943 | $2.240 | $12.51 | $2.341 |
 
-26 work items per repeat: 24 of the 30 faults produced one primary incident and one
+26 work items per repeat: 24 of the 25 faults produced one primary incident and one
 produced two; the 5 clean runs produced none (a detection-level false-positive rate of
 0/5, so no clean run will be diagnosed). Both runs together: about $1.17 expected,
 $2.79 at the gate estimate. The Sonnet worst case exceeds $10 on paper, but each
@@ -1075,7 +1076,7 @@ The LLM judges (`benchmark/harness/judge.py`, Haiku, purpose `judge`) are descri
 The Phase 4 findings (early `unknown`, repeated tool calls, irrelevant deploys cited,
 `rows_out` not explained) are known issues for the failure analysis, not fixed. The prompt
 version is selectable (`PROMPT=`). A v2 may only be tuned on the dev split and would then
-be benchmarked next to v1 on the same 30 faults; it doesn't exist (see the v2 note under
+be benchmarked next to v1 on the same 25 faults + 5 clean runs; it doesn't exist (see the v2 note under
 the results).
 
 ### Tests (Phase 5a)
@@ -1107,8 +1108,8 @@ the results).
 
 ## Benchmark results (Phase 5b)
 
-Run on 2026-10-27: prompt `diagnosis_v1` (frozen, unedited), benchmark split (30 faults:
-25 injected + 5 clean), Haiku 5.5 with 3 repeats per fault, Sonnet 5.5 with 1. Every
+Run on 2026-10-27: prompt `diagnosis_v1` (frozen, unedited), benchmark split (25 faults +
+5 clean runs), Haiku 5.5 with 3 repeats per fault, Sonnet 5.5 with 1. Every
 number below is as measured, from `benchmark/results/report/metrics.json`. Nothing was
 re-run to improve a number, and the detector wasn't tuned. Every diagnosis finished with
 status `ok`: there were no API errors, caps or invalid outputs, so none needed a retry.
@@ -1133,7 +1134,7 @@ Outputs: `benchmark/results/runs/*/results.jsonl` (each diagnosis) and `judge.js
 | Measure | Haiku 5.5 (3 repeats) | Sonnet 5.5 (1 repeat) |
 |---|---|---|
 | Detector: raw findings → primary incidents (30 scenarios) | 55 → 26 (46 incl. downstream) | same |
-| Faults detected | **25 / 25** | same |
+| Faults detected (verified at build time, not an independent recall estimate) | **25 / 25** | same |
 | False positives on clean runs | **0 / 5** (0 incidents, 0 findings) | same |
 | Top-1 category accuracy, detected faults | **81.3%** (61/75) | **84.0%** (21/25) |
 | Top-1 category accuracy, end-to-end (misses count wrong) | **81.3%** (61/75) | **84.0%** (21/25) |
@@ -1144,7 +1145,26 @@ Outputs: `benchmark/results/runs/*/results.jsonl` (each diagnosis) and `judge.js
 | Tool calls (median) / LLM calls (median) | 5 / 2 | 4 / 2 |
 | `retry_safe` correct (scored faults) | 86.4% (57/66) | 86.4% (19/22) |
 | Your manual time, 10 faults (median) | **175.0 s**, 6/10 right | |
-| Agent time on the same 10 (median, first evidence → diagnosis) | **52.9 s**, 8/10 right | **49.6 s**, 8/10 right |
+| Agent time on the same 10 (median, detection from first evidence + diagnosis) | **52.9 s**, 8/10 right | **49.6 s**, 8/10 right |
+
+**How to read these numbers:**
+- **25 faults + 5 clean runs, not 30 faults.** Detection is 25 of 25 faults, and the 5 clean
+  runs raised 0 false positives (0 incidents, 0 findings).
+- **25/25 is not an independent recall estimate.** Each scenario's detection was verified
+  when it was built (Phase 5a refuses a scenario that doesn't raise its expected incident),
+  and the faults are the kinds the four detectors were written for. It shows the detectors
+  work on their intended faults, not how many real-world faults they would catch.
+- **The sample is 25 distinct faults.** Haiku's 75 diagnoses are 3 repeats of the same 25,
+  not 75 independent samples: repeats measure run-to-run variation, not more coverage. So
+  81.3% is 61 of 75 *attempts*. Per fault, Haiku was right in all 3 repeats on 19 of 25
+  and in none on 4. Sonnet's 84.0% is 21 of 25. With n = 25, one fault moves a model's
+  accuracy by 4 points and a category by 20–33 points.
+- **The agent's 52.9 s (Haiku) / 49.6 s (Sonnet) includes detection.** It is the detector's
+  latency from the first evidence event to the incident (median about 40 s, from the 60-s
+  poll replay) plus the median diagnosis latency (13.4 s / 9.2 s). It does *not* include
+  the time before the first evidence event (the job running until it fails), the lander's
+  ~2 s, or anyone reading the Slack alert. Your clock started at the alert, after
+  detection, so diagnosis against diagnosis is 13.4 s / 9.2 s vs. your 175.0 s.
 
 Detected = end-to-end because the detector missed nothing. The per-diagnosis cost, latency
 and token figures include all 78 / 26 diagnoses. That covers the business-dip night's second
@@ -1254,11 +1274,40 @@ Brier score: Haiku 0.127, Sonnet 0.123. Both models are reasonably calibrated, a
   | Haiku | 43 | 18 | 13 | 1 | 2.37 |
   | Sonnet | 13 | 7 | 5 | 0 | 2.32 |
 
-  **Judge vs. human agreement: pending.** A blind sample of 15 fault-level diagnoses (8
-  Haiku, 7 Sonnet, 2–3 per category, model and scores hidden) is in
-  `benchmark/results/human/sheet.md`. Once `scores.csv` is filled in,
-  `make benchmark-agreement` reports exact and within-one agreement and quadratic-weighted
-  kappa. Until then, the fix-quality numbers are an unvalidated LLM judgement.
+  **Judge vs. human agreement** (`benchmark/results/human/agreement.json`). You scored a
+  blind sample of 15 fault-level diagnoses (8 Haiku, 7 Sonnet, 2–3 per true category; the
+  model, its confidence and the judges' scores were hidden) with the same rubric text.
+
+  | | n | exact | within one | kappa (95% bootstrap CI) | means (you / judge) |
+  |---|---:|---:|---:|---|---|
+  | Fix score (0–3) | 15 | **14/15** (93.3%) | 15/15 | quadratic-weighted **0.94** (0.59–1.00) | 2.60 / 2.53 |
+  | Root-cause verdict | 15 | **12/15** (80.0%) | — | Cohen's **0.61** (0.38–1.00) | — |
+
+  - **Fix score:** the one disagreement is a Sonnet bad-deploy fix you gave 3 and the judge
+    2. Both of you gave the two OOM "check the logs, then re-run" fixes a 1.
+  - **Root cause:** all 3 disagreements go the same way: the judge said `partial` where you
+    said `mismatch`. That's the two OOM `unknown`s and a duplicate load described as
+    "payment_id is null" (the DQ "null" tool gap). You and the judge agreed on every
+    `match` (10 of 10). So "category right **and** root `match`" is supported by this
+    sample, but the judge's `partial` count is lenient: some of it is wrong to a human.
+
+  **How much to trust the fix-quality scores:** enough for the aggregate means (within about
+  0.1 of yours here) and to separate good fixes from weak ones. Not for fine distinctions,
+  for these reasons:
+  - The sample is small: 15 items, so the kappa interval runs down to 0.59.
+  - It is skewed: you gave 11 of the 15 a 3, two a 2 and two a 1. There were no 0s, so a
+    "harmful fix" score of 0 is **unvalidated**. That covers the 1 Haiku fix the judge
+    scored 0.
+  - There is one rater, the builder of the benchmark, so it isn't inter-human agreement.
+  - You and the judge saw the same ground-truth text, so both can be anchored on it in the
+    same way.
+
+  Treat a 3 vs. 2 difference between models as noise, and read `partial` + `mismatch`
+  together as "not the stated root cause".
+
+  Your `scores.csv` was saved with a leading blank line and CRLF line ends, so the first
+  `make benchmark-agreement` failed. The reader now skips blank lines, a BOM and CRLF. Your
+  file was not edited.
 
 ### With vs. without PipelineSentinel (your 10 timed faults)
 
@@ -1343,14 +1392,16 @@ $0.943 (Sonnet).
 - **Detection is 25/25 by construction** (see above), and the latency comes from a poll
   replay, not from the live service.
 - **The OOM result says more about the tools than the model.** With the error line
-  available, the answer would likely change; that wasn't tested (it needs a tool change,
-  not a prompt change).
+  available, Haiku gets all 9 OOM repeats right. That was measured post-hoc in Phase 5c,
+  on the same faults, below.
 - **`retry_safe` ground truth** was written by the builder after the catalog, though before
   reading results.
 - **LLM judges.** Root cause and fix quality are judged by Haiku, the same family as one of
-  the models judged. Their agreement with a human is pending (above).
+  the models judged. Agreement with one human on 15 items is high for the fix score
+  (κ 0.94) and moderate for the root-cause verdict (κ 0.61, the judge is lenient on
+  `partial`); a 0 score was never tested (see above).
 - **Repeated tool calls are counted by tool name;** arguments aren't logged.
-- **One prompt.** No v2 was built.
+- **One prompt.** No v2 was built. Phase 5c changed tools and code, not the prompt.
 
 ### Tests (Phase 5b)
 
@@ -1379,6 +1430,107 @@ $1.15, which would leave about $7.70 of the cap. The dev split has 9 faults (2 c
 1 OOM, 1 late upstream DAG and no unreachable source. That is thin for tuning, so a v2 gain
 on the benchmark would be suggestive, not conclusive.
 
+## Phase 5c: post-hoc tool fixes (not held-out)
+
+**Read this as post-hoc.** The v1 results above are the headline "before" and are
+unchanged. Phase 5c fixes the three problems the v1 failure analysis found. The fixes were
+chosen *after* reading those failures and measured on the *same 25 faults*, so the "after"
+numbers show these fixes remove these failures. They are **not** an estimate of accuracy
+on unseen faults. `prompts/diagnosis_v1.md` was not edited. Only Haiku was re-run.
+
+What changed (code, with tests):
+- **(a) Logs.** The failure callback (`sentinel/instrumentation/airflow_callbacks.py`) now
+  keeps terminal JVM error lines (`java.lang.*Error`, JVM fatal-error banners, the OOM
+  killer) from anywhere in the task log, ahead of the 60-line tail
+  (`terminal_errors.py`). `get_error_logs` returns them in a `terminal_errors` field that
+  truncation can't cut.
+- **(b) DQ.** `pipelines/quality/checkpoint.py` now keeps what GX already computed: a sample
+  of the unexpected values with counts, and the null count. That is event schema 1.2, an
+  additive change. `get_dq_failures` reports `unexpected_values_sample` and `null_count`
+  instead of `"observed_value": "null"`.
+- **(c) Guardrail.** In the `Diagnosis` model, a top cause of `unknown` forces
+  `retry_safe = false`, with a marked reason. That covers Slack, the retry API and the
+  store.
+
+How it was run (isolated from v1):
+
+```bash
+make benchmark-build LABEL=posthoc-tool-fixes BUILD_SPLIT=benchmark   # own lakes: data/benchmark-posthoc-tool-fixes
+make benchmark DRY_RUN=1 MODEL=claude-haiku-5-5 REPEATS=3 LABEL=posthoc-tool-fixes
+make benchmark MODEL=claude-haiku-5-5 REPEATS=3 LABEL=posthoc-tool-fixes
+make benchmark-judge LABEL=posthoc-tool-fixes
+make benchmark-posthoc LABEL=posthoc-tool-fixes                       # report/posthoc/ (no API)
+```
+
+The rebuilt lakes reproduce v1's detection exactly: 55 raw findings → 26 primary
+incidents, 25/25 faults, 0 incidents on the 5 clean runs. The dry run estimated $0.227
+(gate $0.554). `make benchmark-posthoc` re-scores v1 from its own lakes and checks that
+the result equals the committed v1 `metrics.json` (`v1_rescored_equals_committed: true`).
+
+![Before vs after](benchmark/results/report/posthoc/charts/before_after.svg)
+
+| Haiku 5.5, 3 repeats | v1 (headline) | post-hoc tool fixes |
+|---|---|---|
+| Top-1 accuracy (detected = end-to-end) | 81.3% (61/75) | 93.3% (70/75) |
+| Top-3 accuracy | 82.7% | 96.0% |
+| Category right **and** root `match` | 50.7% (38/75) | 56.0% (42/75) |
+| Root-cause judge: match / partial / mismatch | 42 / 23 / 10 | 46 / 29 / 0 |
+| Fix-quality judge mean (3/2/1/0) | 2.37 (43/18/13/1) | 2.65 (50/24/1/0) |
+| `unknown` rate; wrong `unknown` | 21.3%; 10 | 6.7%; 0 |
+| `retry_safe` correct; unsafe "safe" | 57/66; 9 | 64/66; 2 |
+| Brier score | 0.127 | 0.106 |
+| Faults right in 3/3 repeats, in 0/3 | 19, 4 | 22, 1 |
+| Cost per diagnosis (mean) / latency / tool calls (median) | $0.0025 / 12.8 s / 5 | $0.0023 / 12.6 s / 4 |
+
+Per true category (`report/posthoc/before_after.csv`):
+
+| Category | faults | top-1 v1 → post | root `match` v1 → post | `retry_safe` correct v1 → post |
+|---|---:|---|---|---|
+| oom | 3 | **0/9 → 9/9** | 0/9 → 2/9 | 0/9 → 7/9 |
+| data_quality | 5 | 15/15 → 15/15 | 3/15 → 6/15 | 15/15 → 15/15 |
+| upstream_outage | 3 | 5/9 → 6/9 | 9/9 → 8/9 | 6/6 → 6/6 |
+| unknown (ambiguous) | 2 | 6/6 → **5/6** | 3/6 → 5/6 | 3/3 → 3/3 |
+| bad_deploy | 4 | 11/12 → 11/12 | 8/12 → 8/12 | 12/12 → 12/12 |
+| late_data | 3 | 9/9 → 9/9 | 7/9 → 5/9 | 9/9 → 9/9 |
+| schema_drift | 5 | 15/15 → 15/15 | 12/15 → 12/15 | 12/12 → 12/12 |
+
+What this does and doesn't show:
+- **OOM: fixed at the category level by (a).** All 9 repeats cite the `OutOfMemoryError`
+  line, at confidence 0.8–0.85. Root cause is still mostly `partial`: no tool shows the
+  task's `JAVA_TOOL_OPTIONS` memory setting, so the model can't say why the limit was so
+  low. 2 of 9 still call the retry safe. The guardrail doesn't catch them, because the top
+  cause is now `oom`, not `unknown`.
+- **DQ: (b) half-worked, and introduced a bug.** Negative amounts went from root `mismatch`
+  3/3 to `match` 3/3. The invalid payment code went from `mismatch` to `partial`, because
+  string samples are JSON-encoded twice: the model saw `"\"upi-collect\""` and blamed
+  "literal quote characters". The fix is a one-line change. It is **not applied**, because
+  re-running to measure it would be another post-hoc iteration.
+- **Guardrail (c), measured separately:** applied offline to v1's diagnoses, it alone
+  makes `retry_safe` 66/66 correct, since every v1 error was an `unknown` OOM. In the
+  post-hoc run it fired twice, both on the business dip, where `retry_safe` is unscored.
+- **Not fixed, and not expected to be:** the late upstream DAG is still `late_data` 0/3
+  (a prompt gap). There is one new miss: the business dip (truth `unknown`) got
+  `data_quality` in 1 of 3 repeats, the same prompt gap v1 showed on that night's payments
+  incident.
+- **Noise floor:** categories the fixes don't touch moved by up to 2 root verdicts
+  (late_data 7/9 → 5/9). Only the OOM category and the negative-amount fault changed by
+  more than that.
+
+Spend for Phase 5c: Haiku run $0.1826 (180 calls), judges $0.0298 (156 calls), total
+**$0.2124**. The ledger is now **$1.3592 of $10** (814 calls).
+
+### Tests (Phase 5c)
+
+| Test file | What it proves |
+|---|---|
+| `test_terminal_errors.py` | JVM `*Error`s, fatal-error banners and the OOM killer are found; Py4J/connection errors, `Exception`s and ordinary warnings aren't; first distinct lines, capped |
+| `test_airflow_callbacks.py` | an OOM 150 lines before the end is kept ahead of the 60-line tail, within the size cap; an OOM already in the tail is not repeated |
+| `test_diagnose_tools.py` | a fatal line that truncation cuts from `traceback_tail` still comes back in `terminal_errors`; DQ failures report real sample values and null counts, never `"null"`; old (1.1) events without a sample still work |
+| `test_quality.py` | a real GX run carries `unexpected_values` (-5.0 ×3, `XYZ` ×3) and `missing_count` into the emitted event |
+| `test_diagnose_schema.py` | `unknown` + `retry_safe: true` → false with the guardrail note; idempotent; known top causes and lower-ranked `unknown`s untouched; note fits the 600-char limit |
+| `test_benchmark_runner.py` | a labelled run writes its own folder, never resumes or touches the v1 file, and records the label and `guardrail_applied`; bad labels are refused |
+| `test_benchmark_analysis.py` | the guardrail counterfactual changes only `unknown` + safe rows; before/after rows per category and total; the before/after chart is valid SVG; agreement reads a CRLF/BOM/blank-line `scores.csv` |
+
 ## Benchmark honesty notes
 
 - **The manual baseline is only partially blind.** The faults are injected in randomized
@@ -1390,6 +1542,8 @@ on the benchmark would be suggestive, not conclusive.
 - Labels: trial 1 was revealed right after it was recorded (`REVEAL=each`); trials 2-10
   were revealed only after all ten were recorded (`REVEAL=end`). Result: 6 of 10 right,
   median 175.0 s.
+- Phase 5c is labelled post-hoc everywhere it appears. Its fixes were chosen after seeing
+  v1's failures on the same faults, and it never replaces a v1 number.
 - Nothing in Phase 5b was re-run to get a better number. The prompt wasn't edited, the
   detector wasn't tuned, and every diagnosis is in the results files.
 - The author also saw the fault *templates* (the kinds of fault and their parameter
@@ -1423,7 +1577,7 @@ src/sentinel/ events/ (models, sinks, replay, schema) instrumentation/ (job wrap
              signing) cli.py
 prompts/     diagnosis_v1.md judge_v1.md judge_fix_v1.md  # versioned, frozen prompts
 benchmark/   harness/ (catalog, templates, scenario, history, airflow_emu, runner, manual,
-             judge, leaks) analysis/ (detection replay, judging, score, human, charts)
+             judge, leaks) analysis/ (detection replay, judging, score, human, charts, posthoc)
              sealed/ (labels, retry_safe truth)
              results/ledger.json (every real LLM call)  runs/ manual/ human/ report/
 schemas/     event.schema.json                          # generated contract (make schemas)

@@ -13,10 +13,11 @@ import pandas as pd
 from great_expectations.checkpoint.actions import ValidationAction
 
 from pipelines.quality.suites import expectations_for, suite_name
-from sentinel.events.models import DQResult, ExpectationOutcome, RunContext
+from sentinel.events.models import DQResult, ExpectationOutcome, RunContext, UnexpectedValue
 from sentinel.events.sinks import EventSink
 
 _MAX_LIST = 20
+_MAX_UNEXPECTED = 10
 
 
 def _jsonable(value: Any) -> Any:
@@ -29,6 +30,18 @@ def _jsonable(value: Any) -> Any:
     if value is None or isinstance(value, bool | int | float | str):
         return value
     return str(value)
+
+
+def _unexpected_values(res: dict[str, Any]) -> list[UnexpectedValue] | None:
+    """GX's sample of the values that broke a column-map expectation, with counts.
+    None when GX has none (table-level expectations, or nothing unexpected)."""
+    counts = res.get("partial_unexpected_counts")
+    if not counts:
+        return None
+    return [
+        UnexpectedValue(value=_jsonable(c.get("value")), count=int(c.get("count") or 0))
+        for c in counts[:_MAX_UNEXPECTED]
+    ]
 
 
 def to_dq_result(dataset: str, row_count: int, checkpoint_result: Any) -> DQResult:
@@ -46,6 +59,8 @@ def to_dq_result(dataset: str, row_count: int, checkpoint_result: Any) -> DQResu
                     observed_value=_jsonable(res.get("observed_value")),
                     unexpected_count=res.get("unexpected_count"),
                     unexpected_percent=_jsonable(res.get("unexpected_percent")),
+                    unexpected_values=_unexpected_values(res),
+                    missing_count=res.get("missing_count"),
                 )
             )
     failed = sum(not o.success for o in outcomes)

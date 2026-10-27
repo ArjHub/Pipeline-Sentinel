@@ -27,6 +27,7 @@ from sentinel.detect.config import DetectionConfig
 from sentinel.detect.schema_drift import diff
 from sentinel.detect.store import incidents_path, read_incidents
 from sentinel.diagnose.redact import clean
+from sentinel.instrumentation.terminal_errors import terminal_error_lines
 
 LOG_LEVELS = ("ERROR", "CRITICAL", "WARNING")
 
@@ -160,18 +161,23 @@ class Toolbox:
                 continue
             if task and r["task_id"] != task:
                 continue
-            items.append(
-                {
-                    "at": r["emitted_at"],
-                    "task_id": r["task_id"],
-                    "try_number": r["try_number"],
-                    "level": p.get("level"),
-                    "logger": p.get("logger"),
-                    "exc_type": p.get("exc_type"),
-                    "message": self._c(p.get("message")),
-                    "traceback_tail": self._c(p.get("traceback"), self.traceback_max_chars),
-                }
-            )
+            item = {
+                "at": r["emitted_at"],
+                "task_id": r["task_id"],
+                "try_number": r["try_number"],
+                "level": p.get("level"),
+                "logger": p.get("logger"),
+                "exc_type": p.get("exc_type"),
+                "message": self._c(p.get("message")),
+            }
+            # Scanned before truncation, so a fatal JVM error deep in the traceback text
+            # (or kept by the callback ahead of the tail) is never cut away.
+            text = "\n".join(filter(None, (p.get("message"), p.get("traceback"))))
+            fatal = terminal_error_lines(text.splitlines())
+            if fatal:
+                item["terminal_errors"] = [self._c(line) for line in fatal]
+            item["traceback_tail"] = self._c(p.get("traceback"), self.traceback_max_chars)
+            items.append(item)
         for r in self.bronze.rows("job_metrics"):
             p = r["payload"]
             if (r["pipeline"], r["ds"]) != (pipeline, ds) or (task and r["task_id"] != task):
@@ -352,16 +358,7 @@ class Toolbox:
                     "success": p["success"],
                     "row_count": p["row_count"],
                     "failed_expectations": [
-                        {
-                            "expectation_type": e["expectation_type"],
-                            "column": e.get("column"),
-                            "observed_value": self._c(
-                                json.dumps(e.get("observed_value"), default=str), 200
-                            ),
-                            "unexpected_count": e.get("unexpected_count"),
-                        }
-                        for e in p["results"]
-                        if not e["success"]
+                        self._expectation(e) for e in p["results"] if not e["success"]
                     ],
                 }
             )
@@ -369,6 +366,27 @@ class Toolbox:
             "scope": {"pipeline": pipeline, "ds": ds},
             "untrusted_data": out[-self.max_items :][::-1],
         }
+
+    def _expectation(self, e: dict[str, Any]) -> dict[str, Any]:
+        """One failed expectation. Column-map expectations (values in set, between, ...)
+        have no single observed value: GX reports None, which used to reach the model as
+        the string "null" and read as null data. Report what was actually there instead:
+        a sample of the unexpected values and the null count (events from 1.2 on)."""
+        out: dict[str, Any] = {
+            "expectation_type": e["expectation_type"],
+            "column": e.get("column"),
+        }
+        if e.get("observed_value") is not None:
+            out["observed_value"] = self._c(json.dumps(e["observed_value"], default=str), 200)
+        out["unexpected_count"] = e.get("unexpected_count")
+        if e.get("unexpected_values") is not None:
+            out["unexpected_values_sample"] = [
+                {"value": self._c(json.dumps(v.get("value"), default=str), 80), "count": v["count"]}
+                for v in e["unexpected_values"]
+            ]
+        if e.get("missing_count") is not None:
+            out["null_count"] = e["missing_count"]
+        return out
 
 
 _SCOPE_PROPS = {
@@ -399,7 +417,9 @@ TOOL_DEFS: list[dict[str, Any]] = [
     _tool(
         "get_error_logs",
         "ERROR/WARNING log lines and failed task attempts (with traceback tails) for one "
-        "pipeline run. Newest first. Redacted and truncated.",
+        "pipeline run. Newest first. Redacted and truncated. `terminal_errors`, when present, "
+        "lists fatal JVM/process errors (e.g. java.lang.OutOfMemoryError) found anywhere in "
+        "the log, even outside the tail.",
         {
             "task_id": {"type": "string", "description": "Only this task."},
             "limit": {"type": "integer", "description": "Max items (<= 20)."},
@@ -430,6 +450,7 @@ TOOL_DEFS: list[dict[str, Any]] = [
     _tool(
         "get_dq_failures",
         "Great Expectations results for the ds: which expectations failed, on which "
-        "column, with the observed value.",
+        "column, with the observed value (table-level checks) or a sample of the "
+        "unexpected values and the null count (column-value checks).",
     ),
 ]

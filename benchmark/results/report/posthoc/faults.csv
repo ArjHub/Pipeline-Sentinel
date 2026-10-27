@@ -1,0 +1,26 @@
+fault_id,template,truth,v1_predicted,v1_correct,v1_root,v1_retry_safe,posthoc_predicted,posthoc_correct,posthoc_root,posthoc_retry_safe,changed
+F-275N39,deploy.code_regression,bad_deploy,bad_deploy bad_deploy bad_deploy,3/3,match match match,False False False,bad_deploy bad_deploy bad_deploy,3/3,partial match match,False False False,False
+F-5RX3GD,deploy.code_regression,bad_deploy,data_quality bad_deploy bad_deploy,2/3,partial partial partial,False False False,data_quality bad_deploy bad_deploy,2/3,partial partial partial,False False False,False
+F-7BAWGS,amb.timezone_shift,data_quality,data_quality data_quality data_quality,3/3,partial partial partial,False False False,data_quality data_quality data_quality,3/3,partial partial partial,False False False,False
+F-7YQ53N,upstream.dag_missing,upstream_outage,upstream_outage upstream_outage upstream_outage,3/3,match match match,False False False,upstream_outage upstream_outage upstream_outage,3/3,match partial match,False False False,False
+F-8EHKFX,dq.invalid_values,data_quality,data_quality data_quality data_quality,3/3,mismatch mismatch mismatch,False False False,data_quality data_quality data_quality,3/3,partial partial partial,False False False,False
+F-AX9BPT,schema.retype,schema_drift,schema_drift schema_drift schema_drift,3/3,partial partial partial,False False False,schema_drift schema_drift schema_drift,3/3,partial partial partial,False False False,False
+F-CGQXGR,dq.out_of_range,data_quality,data_quality data_quality data_quality,3/3,mismatch mismatch mismatch,False False False,data_quality data_quality data_quality,3/3,match match match,False False False,False
+F-ED2JNB,upstream.dag_late,upstream_outage,late_data late_data late_data,0/3,match match match,True True True,late_data late_data late_data,0/3,match match match,True True True,False
+F-H2YF8E,deploy.code_regression,bad_deploy,bad_deploy bad_deploy bad_deploy,3/3,match partial match,False False False,bad_deploy bad_deploy bad_deploy,3/3,match match match,False False False,False
+F-H3FBP3,amb.permissions,unknown,unknown unknown unknown,3/3,match match match,False False False,unknown unknown unknown,3/3,match match match,False False False,False
+F-H6376M,deploy.code_regression,bad_deploy,bad_deploy bad_deploy bad_deploy,3/3,match match match,False False False,bad_deploy bad_deploy bad_deploy,3/3,match match match,False False False,False
+F-J3VNMC,schema.drop,schema_drift,schema_drift schema_drift schema_drift,3/3,match match match,False False False,schema_drift schema_drift schema_drift,3/3,match match match,False False False,False
+F-J8PS66,dq.duplicate_load,data_quality,data_quality data_quality data_quality,3/3,partial partial partial,False False False,data_quality data_quality data_quality,3/3,match partial partial,False False False,False
+F-JXQHJ8,late.stale_snapshot,late_data,late_data late_data late_data,3/3,match match match,False False False,late_data late_data late_data,3/3,match partial match,False False False,False
+F-P56PRB,amb.business_dip,unknown,unknown unknown unknown,3/3,partial partial partial,False False False,unknown data_quality unknown,2/3,partial match match,False False False,True
+F-P8RWFW,late.truncated,late_data,late_data late_data late_data,3/3,match match match,False False False,late_data late_data late_data,3/3,match match match,False False False,False
+F-Q4SPFW,schema.drop,schema_drift,schema_drift schema_drift schema_drift,3/3,match match match,False False False,schema_drift schema_drift schema_drift,3/3,match match match,False False False,False
+F-QXQHZ5,upstream.source_unreachable,upstream_outage,upstream_outage upstream_outage unknown,2/3,match match match,False True True,upstream_outage upstream_outage upstream_outage,3/3,match match match,True True True,True
+F-R36B8K,oom.direct_memory,oom,unknown unknown unknown,0/3,partial mismatch partial,True True True,oom oom oom,3/3,partial partial match,False False False,True
+F-R5AGSM,late.previous_day_file,late_data,late_data late_data late_data,3/3,match partial partial,False False False,late_data late_data late_data,3/3,partial partial partial,False False False,False
+F-TFXH2V,dq.null_spike,data_quality,data_quality data_quality data_quality,3/3,match match match,False False False,data_quality data_quality data_quality,3/3,partial match match,False False False,False
+F-WA6386,schema.add,schema_drift,schema_drift schema_drift schema_drift,3/3,match match match,True True True,schema_drift schema_drift schema_drift,3/3,match match match,True True True,False
+F-WAJQGA,schema.rename,schema_drift,schema_drift schema_drift schema_drift,3/3,match match match,False False False,schema_drift schema_drift schema_drift,3/3,match match match,False False False,False
+F-XZR2R6,oom.direct_memory,oom,unknown unknown unknown,0/3,partial partial mismatch,True True True,oom oom oom,3/3,match partial partial,False True False,True
+F-ZR22VD,oom.direct_memory,oom,unknown unknown unknown,0/3,mismatch mismatch partial,True True True,oom oom oom,3/3,partial partial partial,False False True,True

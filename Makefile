@@ -17,7 +17,7 @@ export
 .PHONY: help env build up down clean ps logs deploy run-all query query-bronze replay-events land \
 	detect query-incidents break-it diagnose query-diagnoses demo-e2e \
 	benchmark benchmark-build benchmark-status benchmark-detection benchmark-judge \
-	benchmark-score benchmark-human-sample benchmark-agreement benchmark-catalog manual-trial trial-inspect \
+	benchmark-score benchmark-human-sample benchmark-agreement benchmark-posthoc benchmark-catalog manual-trial trial-inspect \
 	trial-incident trial-bronze test-benchmark \
 	schemas test test-unit test-dags test-e2e test-real-api lint fmt lock mem mem-profile
 
@@ -89,7 +89,11 @@ break-it: ## Inject a fault on the live stack: FAULT=missing_amount|volume_drop|
 	bash scripts/break_it.sh $(FAULT) $(DATE)
 
 # --- Phase 5 benchmark (python -m benchmark.harness; see README "Benchmark harness") ---
-BENCH := $(COMPOSE) run --rm benchmark
+# LABEL=<slug> (Phase 5c: posthoc-tool-fixes) builds and runs against its own scenario
+# lakes in data/benchmark-<slug> and its own run folder; the unlabelled v1 lakes and
+# results are never touched.
+BENCH_WORK = $(if $(LABEL),-e SENTINEL_BENCHMARK_WORK=/workspace/data/benchmark-$(LABEL))
+BENCH := $(COMPOSE) run --rm $(BENCH_WORK) benchmark
 BENCH_PY := $(JOBS_PY) -m benchmark.harness
 SPLIT ?= benchmark
 PROMPT ?= diagnosis_v1
@@ -101,22 +105,23 @@ benchmark-catalog: ## Re-draw the sealed fault catalog (seeded; CHECK=1 only ver
 benchmark-build: ## Build scenario lakes (real jobs, no API calls): SPLIT=all|benchmark|dev [REBUILD=1]
 	$(BENCH) "$(BENCH_PY) build --split $(or $(BUILD_SPLIT),all) $(if $(REBUILD),--rebuild)"
 
-benchmark: ## Run the benchmark: MODEL= REPEATS= PROMPT=diagnosis_v1 SPLIT=benchmark DRY_RUN=1 RESUME=1
+benchmark: ## Run the benchmark: MODEL= REPEATS= PROMPT=diagnosis_v1 SPLIT=benchmark DRY_RUN=1 RESUME=1 LABEL=
 	@$(if $(DRY_RUN),,bash scripts/check_auto_diagnose_off.sh)
 	$(if $(DRY_RUN),,$(MAKE) --no-print-directory benchmark-build BUILD_SPLIT=$(SPLIT))
-	$(COMPOSE) run --rm -e ANTHROPIC_API_KEY -e SENTINEL_AUTO_DIAGNOSE benchmark \
+	$(COMPOSE) run --rm -e ANTHROPIC_API_KEY -e SENTINEL_AUTO_DIAGNOSE $(BENCH_WORK) benchmark \
 	  "$(BENCH_PY) run --model $(BENCH_MODEL) --split $(SPLIT) --prompt $(PROMPT) \
 	  $(if $(REPEATS),--repeats $(REPEATS)) $(if $(DRY_RUN),--dry-run) $(if $(RESUME),--resume) \
-	  $(if $(RETRY_ERRORS),--retry-errors) $(if $(JUDGE),--judge)"
+	  $(if $(RETRY_ERRORS),--retry-errors) $(if $(JUDGE),--judge) $(if $(LABEL),--label $(LABEL))"
 
 BENCH_AN := $(JOBS_PY) -m benchmark.analysis
 
 benchmark-detection: ## Phase 5b: replay the detector's 60 s polls over the scenarios (no API)
 	$(BENCH) "$(BENCH_AN) detection"
 
-benchmark-judge: ## Phase 5b: LLM judges over one run: MODEL= [DRY_RUN=1] (paid, resumable)
-	$(COMPOSE) run --rm -e ANTHROPIC_API_KEY benchmark \
-	  "$(BENCH_AN) --prompt $(PROMPT) judge --model $(BENCH_MODEL) $(if $(DRY_RUN),--dry-run)"
+benchmark-judge: ## Phase 5b: LLM judges over one run: MODEL= [DRY_RUN=1] [LABEL=] (paid, resumable)
+	$(COMPOSE) run --rm -e ANTHROPIC_API_KEY $(BENCH_WORK) benchmark \
+	  "$(BENCH_AN) --prompt $(PROMPT) judge --model $(BENCH_MODEL) $(if $(DRY_RUN),--dry-run) \
+	  $(if $(LABEL),--label $(LABEL))"
 
 benchmark-score: ## Phase 5b: metrics.json, CSVs and charts in benchmark/results/report (no API)
 	$(BENCH) "$(BENCH_AN) --prompt $(PROMPT) score"
@@ -126,6 +131,9 @@ benchmark-human-sample: ## Phase 5b: blind 15-diagnosis fix-quality sheet for a 
 
 benchmark-agreement: ## Phase 5b: judge vs. human agreement (after scores.csv is filled in)
 	$(BENCH) "$(BENCH_AN) agreement"
+
+benchmark-posthoc: ## Phase 5c: score a labelled run vs. v1 (LABEL=posthoc-tool-fixes; no API)
+	$(BENCH) "$(BENCH_AN) --prompt $(PROMPT) posthoc --label $(LABEL) --model $(BENCH_MODEL)"
 
 benchmark-status: ## Scenario and result counts (no labels)
 	$(BENCH) "$(BENCH_PY) status"

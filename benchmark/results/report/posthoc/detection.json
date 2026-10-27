@@ -1,0 +1,771 @@
+[
+  {
+    "fault_id": "F-J8PS66",
+    "template": "dq.duplicate_load",
+    "category": "data_quality",
+    "ds": "2026-09-06",
+    "expect_pipeline": "payments_etl",
+    "night_start": "2026-09-07T00:05:03.006841+00:00",
+    "raw_findings": 3,
+    "raw_findings_all_ds": 3,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job",
+      "volume_anomaly"
+    ],
+    "primary_types": [
+      "volume_anomaly"
+    ],
+    "detected": true,
+    "detected_types": [
+      "volume_anomaly"
+    ],
+    "first_evidence_at": "2026-09-07T00:05:25.636987+00:00",
+    "detected_at_poll": "2026-09-07T00:06:03.006841+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 37.4
+  },
+  {
+    "fault_id": "F-P56PRB",
+    "template": "amb.business_dip",
+    "category": "unknown",
+    "ds": "2026-08-16",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-08-17T00:05:36.848194+00:00",
+    "raw_findings": 3,
+    "raw_findings_all_ds": 3,
+    "incidents": 3,
+    "primary_incidents": 2,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "volume_anomaly"
+    ],
+    "primary_types": [
+      "volume_anomaly"
+    ],
+    "detected": true,
+    "detected_types": [
+      "volume_anomaly"
+    ],
+    "first_evidence_at": "2026-08-17T00:05:53.380474+00:00",
+    "detected_at_poll": "2026-08-17T00:06:36.848194+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 43.5
+  },
+  {
+    "fault_id": "F-XZR2R6",
+    "template": "oom.direct_memory",
+    "category": "oom",
+    "ds": "2026-09-18",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-09-19T00:05:17.259838+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-09-19T00:05:39.876549+00:00",
+    "detected_at_poll": "2026-09-19T00:06:17.259838+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 37.4
+  },
+  {
+    "fault_id": "F-R36B8K",
+    "template": "oom.direct_memory",
+    "category": "oom",
+    "ds": "2026-09-22",
+    "expect_pipeline": "daily_revenue_agg",
+    "night_start": "2026-09-23T00:05:25.178706+00:00",
+    "raw_findings": 1,
+    "raw_findings_all_ds": 1,
+    "incidents": 1,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-09-23T00:06:10.637067+00:00",
+    "detected_at_poll": "2026-09-23T00:06:25.178706+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 14.5
+  },
+  {
+    "fault_id": "F-ED2JNB",
+    "template": "upstream.dag_late",
+    "category": "upstream_outage",
+    "ds": "2026-09-12",
+    "expect_pipeline": "daily_revenue_agg",
+    "night_start": "2026-09-13T00:05:14.402992+00:00",
+    "raw_findings": 1,
+    "raw_findings_all_ds": 1,
+    "incidents": 1,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-09-13T00:35:25.016854+00:00",
+    "detected_at_poll": "2026-09-13T00:36:14.402992+00:00",
+    "latency_from_night_start_s": 1860.0,
+    "latency_from_first_evidence_s": 49.4
+  },
+  {
+    "fault_id": "F-J3VNMC",
+    "template": "schema.drop",
+    "category": "schema_drift",
+    "ds": "2026-08-25",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-08-26T00:05:09.860194+00:00",
+    "raw_findings": 3,
+    "raw_findings_all_ds": 3,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job",
+      "schema_change"
+    ],
+    "primary_types": [
+      "schema_change"
+    ],
+    "detected": true,
+    "detected_types": [
+      "schema_change"
+    ],
+    "first_evidence_at": "2026-08-26T00:05:20.753925+00:00",
+    "detected_at_poll": "2026-08-26T00:06:09.860194+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 49.1
+  },
+  {
+    "fault_id": "F-8T7NWC",
+    "template": "clean.none",
+    "category": "none",
+    "ds": "2026-08-28",
+    "expect_pipeline": null,
+    "night_start": "2026-08-29T00:05:24.134440+00:00",
+    "raw_findings": 0,
+    "raw_findings_all_ds": 0,
+    "incidents": 0,
+    "primary_incidents": 0,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [],
+    "primary_types": [],
+    "detected": null,
+    "false_positive_incidents": 0
+  },
+  {
+    "fault_id": "F-YX876M",
+    "template": "clean.none",
+    "category": "none",
+    "ds": "2026-07-19",
+    "expect_pipeline": null,
+    "night_start": "2026-07-20T00:05:07.057140+00:00",
+    "raw_findings": 0,
+    "raw_findings_all_ds": 0,
+    "incidents": 0,
+    "primary_incidents": 0,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [],
+    "primary_types": [],
+    "detected": null,
+    "false_positive_incidents": 0
+  },
+  {
+    "fault_id": "F-H3FBP3",
+    "template": "amb.permissions",
+    "category": "unknown",
+    "ds": "2026-08-03",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-08-04T00:05:05.030524+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-08-04T00:05:21.050429+00:00",
+    "detected_at_poll": "2026-08-04T00:06:05.030524+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 44.0
+  },
+  {
+    "fault_id": "F-V3NYCK",
+    "template": "clean.none",
+    "category": "none",
+    "ds": "2026-09-15",
+    "expect_pipeline": null,
+    "night_start": "2026-09-16T00:05:31.929397+00:00",
+    "raw_findings": 0,
+    "raw_findings_all_ds": 0,
+    "incidents": 0,
+    "primary_incidents": 0,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [],
+    "primary_types": [],
+    "detected": null,
+    "false_positive_incidents": 0
+  },
+  {
+    "fault_id": "F-H6376M",
+    "template": "deploy.code_regression",
+    "category": "bad_deploy",
+    "ds": "2026-07-23",
+    "expect_pipeline": "daily_revenue_agg",
+    "night_start": "2026-07-24T00:05:07.934881+00:00",
+    "raw_findings": 1,
+    "raw_findings_all_ds": 1,
+    "incidents": 1,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-07-24T00:06:06.704424+00:00",
+    "detected_at_poll": "2026-07-24T00:06:07.934881+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 1.2
+  },
+  {
+    "fault_id": "F-Q4SPFW",
+    "template": "schema.drop",
+    "category": "schema_drift",
+    "ds": "2026-09-16",
+    "expect_pipeline": "payments_etl",
+    "night_start": "2026-09-17T00:05:24.464308+00:00",
+    "raw_findings": 3,
+    "raw_findings_all_ds": 3,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job",
+      "schema_change"
+    ],
+    "primary_types": [
+      "schema_change"
+    ],
+    "detected": true,
+    "detected_types": [
+      "schema_change"
+    ],
+    "first_evidence_at": "2026-09-17T00:05:43.372825+00:00",
+    "detected_at_poll": "2026-09-17T00:06:24.464308+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 41.1
+  },
+  {
+    "fault_id": "F-TFXH2V",
+    "template": "dq.null_spike",
+    "category": "data_quality",
+    "ds": "2026-08-21",
+    "expect_pipeline": "payments_etl",
+    "night_start": "2026-08-22T00:05:00.602054+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-08-22T00:05:18.838138+00:00",
+    "detected_at_poll": "2026-08-22T00:06:00.602054+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 41.8
+  },
+  {
+    "fault_id": "F-ZR22VD",
+    "template": "oom.direct_memory",
+    "category": "oom",
+    "ds": "2026-06-24",
+    "expect_pipeline": "payments_etl",
+    "night_start": "2026-06-25T00:05:28.016083+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-06-25T00:05:50.399961+00:00",
+    "detected_at_poll": "2026-06-25T00:06:28.016083+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 37.6
+  },
+  {
+    "fault_id": "F-QXQHZ5",
+    "template": "upstream.source_unreachable",
+    "category": "upstream_outage",
+    "ds": "2026-07-17",
+    "expect_pipeline": "customers_dim",
+    "night_start": "2026-07-18T00:05:19.430849+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-07-18T00:05:27.196186+00:00",
+    "detected_at_poll": "2026-07-18T00:06:19.430849+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 52.2
+  },
+  {
+    "fault_id": "F-AX9BPT",
+    "template": "schema.retype",
+    "category": "schema_drift",
+    "ds": "2026-06-25",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-06-26T00:05:01.888009+00:00",
+    "raw_findings": 3,
+    "raw_findings_all_ds": 3,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job",
+      "schema_change"
+    ],
+    "primary_types": [
+      "schema_change"
+    ],
+    "detected": true,
+    "detected_types": [
+      "schema_change"
+    ],
+    "first_evidence_at": "2026-06-26T00:05:35.668024+00:00",
+    "detected_at_poll": "2026-06-26T00:06:01.888009+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 26.2
+  },
+  {
+    "fault_id": "F-WA6386",
+    "template": "schema.add",
+    "category": "schema_drift",
+    "ds": "2026-06-23",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-06-24T00:05:33.134099+00:00",
+    "raw_findings": 1,
+    "raw_findings_all_ds": 1,
+    "incidents": 1,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "schema_change"
+    ],
+    "primary_types": [
+      "schema_change"
+    ],
+    "detected": true,
+    "detected_types": [
+      "schema_change"
+    ],
+    "first_evidence_at": "2026-06-24T00:06:07.298667+00:00",
+    "detected_at_poll": "2026-06-24T00:06:33.134099+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 25.8
+  },
+  {
+    "fault_id": "F-7YQ53N",
+    "template": "upstream.dag_missing",
+    "category": "upstream_outage",
+    "ds": "2026-08-29",
+    "expect_pipeline": "daily_revenue_agg",
+    "night_start": "2026-08-30T00:05:13.910308+00:00",
+    "raw_findings": 1,
+    "raw_findings_all_ds": 1,
+    "incidents": 1,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-08-30T00:35:26.953856+00:00",
+    "detected_at_poll": "2026-08-30T00:36:13.910308+00:00",
+    "latency_from_night_start_s": 1860.0,
+    "latency_from_first_evidence_s": 47.0
+  },
+  {
+    "fault_id": "F-8EHKFX",
+    "template": "dq.invalid_values",
+    "category": "data_quality",
+    "ds": "2026-09-03",
+    "expect_pipeline": "payments_etl",
+    "night_start": "2026-09-04T00:05:01.514322+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-09-04T00:05:28.317694+00:00",
+    "detected_at_poll": "2026-09-04T00:06:01.514322+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 33.2
+  },
+  {
+    "fault_id": "F-CGQXGR",
+    "template": "dq.out_of_range",
+    "category": "data_quality",
+    "ds": "2026-08-07",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-08-08T00:05:03.977813+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-08-08T00:05:29.990742+00:00",
+    "detected_at_poll": "2026-08-08T00:06:03.977813+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 34.0
+  },
+  {
+    "fault_id": "F-WAJQGA",
+    "template": "schema.rename",
+    "category": "schema_drift",
+    "ds": "2026-07-11",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-07-12T00:05:05.282613+00:00",
+    "raw_findings": 3,
+    "raw_findings_all_ds": 3,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job",
+      "schema_change"
+    ],
+    "primary_types": [
+      "schema_change"
+    ],
+    "detected": true,
+    "detected_types": [
+      "schema_change"
+    ],
+    "first_evidence_at": "2026-07-12T00:05:17.176962+00:00",
+    "detected_at_poll": "2026-07-12T00:06:05.282613+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 48.1
+  },
+  {
+    "fault_id": "F-5RX3GD",
+    "template": "deploy.code_regression",
+    "category": "bad_deploy",
+    "ds": "2026-08-17",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-08-18T00:05:21.302366+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-08-18T00:05:40.615604+00:00",
+    "detected_at_poll": "2026-08-18T00:06:21.302366+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 40.7
+  },
+  {
+    "fault_id": "F-AADYJ2",
+    "template": "clean.none",
+    "category": "none",
+    "ds": "2026-08-14",
+    "expect_pipeline": null,
+    "night_start": "2026-08-15T00:05:33.594480+00:00",
+    "raw_findings": 0,
+    "raw_findings_all_ds": 0,
+    "incidents": 0,
+    "primary_incidents": 0,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [],
+    "primary_types": [],
+    "detected": null,
+    "false_positive_incidents": 0
+  },
+  {
+    "fault_id": "F-R5AGSM",
+    "template": "late.previous_day_file",
+    "category": "late_data",
+    "ds": "2026-06-19",
+    "expect_pipeline": "payments_etl",
+    "night_start": "2026-06-20T00:05:08.512489+00:00",
+    "raw_findings": 3,
+    "raw_findings_all_ds": 3,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job",
+      "late_data"
+    ],
+    "primary_types": [
+      "late_data"
+    ],
+    "detected": true,
+    "detected_types": [
+      "late_data"
+    ],
+    "first_evidence_at": "2026-06-20T00:05:25.235680+00:00",
+    "detected_at_poll": "2026-06-20T00:06:08.512489+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 43.3
+  },
+  {
+    "fault_id": "F-JXQHJ8",
+    "template": "late.stale_snapshot",
+    "category": "late_data",
+    "ds": "2026-07-08",
+    "expect_pipeline": "customers_dim",
+    "night_start": "2026-07-09T00:05:32.626058+00:00",
+    "raw_findings": 3,
+    "raw_findings_all_ds": 3,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job",
+      "late_data"
+    ],
+    "primary_types": [
+      "late_data"
+    ],
+    "detected": true,
+    "detected_types": [
+      "late_data"
+    ],
+    "first_evidence_at": "2026-07-09T00:05:59.775801+00:00",
+    "detected_at_poll": "2026-07-09T00:06:32.626058+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 32.9
+  },
+  {
+    "fault_id": "F-7BAWGS",
+    "template": "amb.timezone_shift",
+    "category": "data_quality",
+    "ds": "2026-08-13",
+    "expect_pipeline": "payments_etl",
+    "night_start": "2026-08-14T00:05:16.540581+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-08-14T00:05:43.810973+00:00",
+    "detected_at_poll": "2026-08-14T00:06:16.540581+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 32.7
+  },
+  {
+    "fault_id": "F-P8RWFW",
+    "template": "late.truncated",
+    "category": "late_data",
+    "ds": "2026-07-21",
+    "expect_pipeline": "orders_ingest",
+    "night_start": "2026-07-22T00:05:01.693513+00:00",
+    "raw_findings": 4,
+    "raw_findings_all_ds": 4,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job",
+      "late_data",
+      "volume_anomaly"
+    ],
+    "primary_types": [
+      "late_data"
+    ],
+    "detected": true,
+    "detected_types": [
+      "late_data"
+    ],
+    "first_evidence_at": "2026-07-22T00:05:23.837052+00:00",
+    "detected_at_poll": "2026-07-22T00:06:01.693513+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 37.9
+  },
+  {
+    "fault_id": "F-275N39",
+    "template": "deploy.code_regression",
+    "category": "bad_deploy",
+    "ds": "2026-09-24",
+    "expect_pipeline": "payments_etl",
+    "night_start": "2026-09-25T00:05:32.504191+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-09-25T00:05:51.196502+00:00",
+    "detected_at_poll": "2026-09-25T00:06:32.504191+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 41.3
+  },
+  {
+    "fault_id": "F-22BZDK",
+    "template": "clean.none",
+    "category": "none",
+    "ds": "2026-08-20",
+    "expect_pipeline": null,
+    "night_start": "2026-08-21T00:05:09.324266+00:00",
+    "raw_findings": 0,
+    "raw_findings_all_ds": 0,
+    "incidents": 0,
+    "primary_incidents": 0,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [],
+    "primary_types": [],
+    "detected": null,
+    "false_positive_incidents": 0
+  },
+  {
+    "fault_id": "F-H2YF8E",
+    "template": "deploy.code_regression",
+    "category": "bad_deploy",
+    "ds": "2026-09-07",
+    "expect_pipeline": "customers_dim",
+    "night_start": "2026-09-08T00:05:06.142385+00:00",
+    "raw_findings": 2,
+    "raw_findings_all_ds": 2,
+    "incidents": 2,
+    "primary_incidents": 1,
+    "primary_incidents_other_ds": 0,
+    "finding_types": [
+      "failed_job"
+    ],
+    "primary_types": [
+      "failed_job"
+    ],
+    "detected": true,
+    "detected_types": [
+      "failed_job"
+    ],
+    "first_evidence_at": "2026-09-08T00:05:31.289696+00:00",
+    "detected_at_poll": "2026-09-08T00:06:06.142385+00:00",
+    "latency_from_night_start_s": 60.0,
+    "latency_from_first_evidence_s": 34.9
+  }
+]

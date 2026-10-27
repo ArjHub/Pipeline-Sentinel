@@ -9,7 +9,8 @@ Versioning policy (SCHEMA_VERSION = "MAJOR.MINOR"):
 - MAJOR bump for anything breaking (removing/renaming/retyping a field). Consumers reject
   unsupported MAJORs into the dead-letter table rather than guessing.
 
-History: 1.0 initial; 1.1 adds `task_run` (Airflow callbacks) and git fields on deploys.
+History: 1.0 initial; 1.1 adds `task_run` (Airflow callbacks) and git fields on deploys;
+1.2 adds `unexpected_values` and `missing_count` to DQ expectation outcomes.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 SUPPORTED_MAJORS = {"1"}
 
 
@@ -80,6 +81,11 @@ class JobMetric(_Payload):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class UnexpectedValue(_Payload):
+    value: Any = None
+    count: int
+
+
 class ExpectationOutcome(_Payload):
     expectation_type: str
     column: str | None = None
@@ -87,6 +93,11 @@ class ExpectationOutcome(_Payload):
     observed_value: Any = None
     unexpected_count: int | None = None
     unexpected_percent: float | None = None
+    # Column-map expectations have no single observed value; these say what was actually
+    # in the column: a sample of the unexpected values with their counts (GX's
+    # partial_unexpected_counts), and how many values were null.
+    unexpected_values: list[UnexpectedValue] | None = None
+    missing_count: int | None = None
 
 
 class DQResult(_Payload):

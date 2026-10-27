@@ -6,7 +6,7 @@ import xml.dom.minidom
 
 import pytest
 
-from benchmark.analysis import charts, human, judging, score
+from benchmark.analysis import charts, human, judging, posthoc, score
 from benchmark.harness.catalog import Fault, Label
 
 
@@ -206,3 +206,60 @@ def test_charts_are_well_formed_svg() -> None:
         }
     ]
     xml.dom.minidom.parseString(charts.manual_vs_agent(manual, ["claude-haiku-5-5"]))
+
+
+def test_posthoc_guardrail_counterfactual_only_changes_unknown_safe_rows() -> None:
+    oom = _fault("F-1", "oom", template="oom.direct_memory")
+    late = _fault("F-2", "upstream_outage", template="upstream.dag_late")
+    retry = {"oom.direct_memory": False, "upstream.dag_late": True}
+    rows = [
+        _row(_result("F-1", "unknown", retry=True), oom, retry),  # the v1 OOM pattern
+        _row(_result("F-2", "late_data", retry=True), late, retry),  # known cause: untouched
+    ]
+    guarded = posthoc.with_guardrail(rows)
+    assert [r["retry_pred"] for r in guarded] == [False, True]
+    assert [r["retry_correct"] for r in guarded] == [True, True]
+    assert rows[0]["retry_pred"] is True  # the v1 rows themselves are not modified
+
+
+def test_posthoc_before_after_rows_per_category_and_total() -> None:
+    oom, dq = _fault("F-1", "oom"), _fault("F-2", "data_quality")
+    before = [_row(_result("F-1", "unknown", repeat=r), oom) for r in range(3)] + [
+        _row(_result("F-2", "data_quality"), dq)
+    ]
+    after = [_row(_result("F-1", "oom", repeat=r), oom) for r in range(3)] + [
+        _row(_result("F-2", "data_quality"), dq)
+    ]
+    rows = {r["category"]: r for r in posthoc.before_after_rows(before, after)}
+    assert (rows["oom"]["v1_top1"], rows["oom"]["posthoc_top1"]) == ("0/3", "3/3")
+    assert (rows["oom"]["v1_unknown"], rows["oom"]["posthoc_unknown"]) == (3, 0)
+    assert rows["all"]["v1_top1"] == "1/4" and rows["all"]["posthoc_top1"] == "4/4"
+    [f1] = [r for r in posthoc.fault_rows(before, after) if r["fault_id"] == "F-1"]
+    assert f1["v1_predicted"] == "unknown unknown unknown" and f1["changed"]
+
+
+def test_before_after_chart_is_well_formed_svg() -> None:
+    per = {"oom": {"top1": {"k": 0, "n": 9, "rate": 0.0}, "top3": {}, "faults": 3}}
+    after = {"oom": {"top1": {"k": 9, "n": 9, "rate": 1.0}, "top3": {}, "faults": 3}}
+    svg = charts.before_after(per, after)
+    xml.dom.minidom.parseString(svg)
+    assert "v1 (Phase 5b)" in svg and "Post-hoc tool fixes" in svg and "not held-out" in svg
+
+
+def test_agreement_reads_a_spreadsheet_saved_scores_csv(tmp_path, monkeypatch) -> None:
+    # The scored sheet came back with CRLF line ends and a leading blank line.
+    (tmp_path / "key.json").write_text('{"S01": {"run": "r", "key": "k"}}')
+    (tmp_path / "scores.csv").write_bytes(
+        b"\xef\xbb\xbf\r\nsample_id,fix_score,root_verdict\r\nS01,3,match\r\n"
+    )
+    monkeypatch.setattr(
+        human,
+        "load_results",
+        lambda p: [
+            {"key": "k", "judge": "fix", "score": 3, "error": None},
+            {"key": "k", "judge": "root", "verdict": "match", "error": None},
+        ],
+    )
+    settings = type("S", (), {"results_dir": tmp_path})()
+    res = human.agreement(settings, tmp_path)
+    assert res["fix"]["n"] == 1 and res["fix"]["exact"] == 1.0 and res["root"]["exact"] == 1.0

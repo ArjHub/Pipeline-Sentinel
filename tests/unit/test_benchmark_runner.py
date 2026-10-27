@@ -173,3 +173,23 @@ def test_unbuilt_scenarios_are_assumed_in_the_estimate_and_block_a_real_run(setu
         llm_factory=lambda m: pytest.fail("LLM made"),
     )
     assert rc == 2 and any("not built" in line for line in out)
+
+
+def test_a_labelled_run_has_its_own_folder_and_never_resumes_the_unlabelled_one(setup) -> None:
+    # Phase 5c: the post-hoc re-run must not touch (or resume into) the v1 results.
+    settings, ledger, _ = setup
+    assert _run(settings, ledger, repeats=1)[0] == 0
+    v1 = runner.results_path(settings, "benchmark", "claude-haiku-5-5", "diagnosis_v1")
+    before = v1.read_bytes()
+    rc, out = _run(settings, ledger, repeats=1, label="posthoc-tool-fixes")
+    post = runner.results_path(
+        settings, "benchmark", "claude-haiku-5-5", "diagnosis_v1", "posthoc-tool-fixes"
+    )
+    assert rc == 0 and any("0 already done, 3 to run" in line for line in out)
+    assert post.parent.name == "benchmark__claude-haiku-5-5__diagnosis_v1__posthoc-tool-fixes"
+    assert v1.read_bytes() == before
+    rows = runner.load_results(post)
+    assert len(rows) == 3 and {r["label"] for r in rows} == {"posthoc-tool-fixes"}
+    assert all(r["guardrail_applied"] is False for r in rows)
+    with pytest.raises(ValueError, match="run label"):
+        runner.results_path(settings, "benchmark", "m", "p", "../v1")

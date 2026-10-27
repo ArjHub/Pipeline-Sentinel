@@ -21,12 +21,15 @@ from typing import Any
 from sentinel.events.models import JobLog, RunContext, TaskRun
 from sentinel.events.sinks import sink_from_env
 from sentinel.instrumentation.context import code_version_for
+from sentinel.instrumentation.terminal_errors import terminal_error_lines
 
 log = logging.getLogger("sentinel.callbacks")
 
 LOG_TAIL_LINES = 60
 LOG_TAIL_MAX_CHARS = 6000
 EXCEPTION_MAX_CHARS = 2000
+EARLIER_HEADER = "[sentinel] terminal error lines from earlier in this log:"
+TAIL_HEADER = f"[sentinel] last {LOG_TAIL_LINES} lines:"
 
 
 def _log_dir() -> Path:
@@ -37,7 +40,11 @@ def _log_dir() -> Path:
 
 
 def log_tail(dag_id: str, run_id: str, task_id: str, try_number: int | None) -> str | None:
-    """Last lines of this attempt's local task log (the default Airflow 2 file layout)."""
+    """Last lines of this attempt's local task log (the default Airflow 2 file layout).
+
+    Terminal JVM error lines (sentinel.instrumentation.terminal_errors) that fall before
+    the tail are kept too, under EARLIER_HEADER ahead of the tail: PySpark's teardown
+    otherwise pushes e.g. an OutOfMemoryError out of the last LOG_TAIL_LINES lines."""
     task_dir = _log_dir() / f"dag_id={dag_id}" / f"run_id={run_id}" / f"task_id={task_id}"
     candidates = [task_dir / f"attempt={try_number}.log"] if try_number else []
     candidates += sorted(task_dir.glob("attempt=*.log"), key=lambda p: p.stat().st_mtime)[::-1]
@@ -48,7 +55,12 @@ def log_tail(dag_id: str, run_id: str, task_id: str, try_number: int | None) -> 
                 fh.seek(max(0, fh.tell() - 64 * 1024))
                 text = fh.read().decode("utf-8", errors="replace")
             tail = "\n".join(text.splitlines()[-LOG_TAIL_LINES:])
-            return tail[-LOG_TAIL_MAX_CHARS:]
+            with path.open(encoding="utf-8", errors="replace") as fh:
+                earlier = [line for line in terminal_error_lines(fh) if line not in tail]
+            if not earlier:
+                return tail[-LOG_TAIL_MAX_CHARS:]
+            head = "\n".join([EARLIER_HEADER, *earlier, TAIL_HEADER]) + "\n"
+            return head + tail[-(LOG_TAIL_MAX_CHARS - len(head)) :]
     return None
 
 

@@ -31,6 +31,7 @@ EvidenceKind = Literal[
 ]
 EVIDENCE_KINDS: tuple[str, ...] = EvidenceKind.__args__  # type: ignore[attr-defined]
 MIN_QUOTE_CHARS = 4
+GUARDRAIL_NOTE = "[guardrail: top cause is unknown, so retry_safe forced to false] Model said: "
 
 
 class Evidence(BaseModel):
@@ -70,6 +71,21 @@ class Diagnosis(BaseModel):
         if conf != sorted(conf, reverse=True):
             raise ValueError("root_causes must be ranked by confidence, highest first")
         return causes
+
+    @model_validator(mode="after")
+    def _unknown_is_never_retry_safe(self) -> Diagnosis:
+        """Guardrail (Phase 5c): if the top cause is unknown, nobody knows a retry won't
+        repeat the failure, so retry_safe is forced to false whatever the model said. In
+        the v1 benchmark every unsafe "safe to retry" was an `unknown` OOM diagnosis."""
+        top = self.root_causes[0]
+        if top.category == "unknown" and top.retry_safe:
+            top.retry_safe = False
+            top.retry_safe_reason = (GUARDRAIL_NOTE + top.retry_safe_reason)[:600]
+        return self
+
+    @property
+    def guardrail_applied(self) -> bool:
+        return self.top.retry_safe_reason.startswith(GUARDRAIL_NOTE)
 
     @property
     def top(self) -> RootCause:

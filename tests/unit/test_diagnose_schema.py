@@ -5,7 +5,13 @@ import copy
 import pytest
 from pydantic import ValidationError
 
-from sentinel.diagnose.schema import CATEGORIES, OUTPUT_JSON_SCHEMA, Diagnosis, unknown
+from sentinel.diagnose.schema import (
+    CATEGORIES,
+    GUARDRAIL_NOTE,
+    OUTPUT_JSON_SCHEMA,
+    Diagnosis,
+    unknown,
+)
 
 GOOD = {
     "incident_id": "INC-1",
@@ -115,3 +121,40 @@ def test_json_schema_matches_the_model() -> None:
         Diagnosis.model_fields["root_causes"].annotation.__args__[0].model_fields
     )
     assert OUTPUT_JSON_SCHEMA["additionalProperties"] is False
+
+
+UNKNOWN_SAFE = {
+    "category": "unknown",
+    "confidence": 0.5,
+    "explanation": "the JVM gateway went away; the tools don't show why",
+    "evidence": [],
+    "suggested_fix": "check executor memory settings",
+    "retry_safe": True,
+    "retry_safe_reason": "looks transient",
+}
+
+
+def test_guardrail_forces_retry_unsafe_when_the_top_cause_is_unknown() -> None:
+    # Phase 5c: in the v1 benchmark all 12 unsafe "safe to retry" calls were unknown OOMs.
+    d = Diagnosis.model_validate(bad(root_causes=[UNKNOWN_SAFE]))
+    assert d.retry_safe is False and d.guardrail_applied
+    assert d.top.retry_safe_reason == GUARDRAIL_NOTE + "looks transient"
+    again = Diagnosis.model_validate(d.model_dump())  # idempotent: no double note
+    assert again.top.retry_safe_reason == d.top.retry_safe_reason and not again.retry_safe
+
+
+def test_guardrail_leaves_known_top_causes_and_lower_unknowns_alone() -> None:
+    safe_drift = {**GOOD["root_causes"][0], "retry_safe": True, "retry_safe_reason": "fixed"}
+    lower_unknown = {**UNKNOWN_SAFE, "confidence": 0.1}
+    d = Diagnosis.model_validate(bad(root_causes=[safe_drift, lower_unknown]))
+    assert d.retry_safe is True and not d.guardrail_applied
+    assert d.root_causes[1].retry_safe is True  # only the top cause drives the retry button
+    honest = Diagnosis.model_validate(bad(root_causes=[{**UNKNOWN_SAFE, "retry_safe": False}]))
+    assert not honest.guardrail_applied and honest.top.retry_safe_reason == "looks transient"
+
+
+def test_guardrail_note_fits_the_reason_limit() -> None:
+    d = Diagnosis.model_validate(
+        bad(root_causes=[{**UNKNOWN_SAFE, "retry_safe_reason": "x" * 600}])
+    )
+    assert len(d.top.retry_safe_reason) == 600 and d.guardrail_applied

@@ -14,8 +14,22 @@ from html import escape
 from pathlib import Path
 
 SURFACE, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
-SERIES = {"haiku": "#2a78d6", "sonnet": "#eb6834", "human": "#1baf7a"}
-NAMES = {"haiku": "Haiku 5.5", "sonnet": "Sonnet 5.5", "human": "Manual (you)"}
+SERIES = {
+    "haiku": "#2a78d6",
+    "sonnet": "#eb6834",
+    "human": "#1baf7a",
+    # Phase 5c: v1 Haiku keeps its blue; the post-hoc run takes slot 4 (yellow; below 3:1
+    # on the surface, so every bar carries a direct k/n label and the CSV is the table).
+    "v1": "#2a78d6",
+    "posthoc": "#eda100",
+}
+NAMES = {
+    "haiku": "Haiku 5.5",
+    "sonnet": "Sonnet 5.5",
+    "human": "Manual (you)",
+    "v1": "v1 (Phase 5b)",
+    "posthoc": "Post-hoc tool fixes",
+}
 RAMP = ["#f4f8fd", "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 FONT = "font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'"
 
@@ -69,43 +83,55 @@ def _bar(x, y, w, h, color) -> str:
 
 
 def accuracy_by_category(metrics: dict) -> str:
-    models = list(metrics["models"])
-    cats = sorted(next(iter(metrics["models"].values()))["per_category"])
-    W, H, L, T, B = 760, 360, 48, 64, 70
+    return category_bars(
+        {short(m): mm["per_category"] for m, mm in metrics["models"].items()},
+        "Diagnosis accuracy by category",
+        "Top-1 category accuracy on detected faults, by true "
+        "category; labels are correct/diagnoses (all repeats).",
+    )
+
+
+def before_after(before: dict, after: dict) -> str:
+    """Phase 5c: Haiku v1 vs. the post-hoc tool-fix re-run, per true category."""
+    return category_bars(
+        {"v1": before, "posthoc": after},
+        "Haiku 5.5: v1 vs. post-hoc tool fixes (not held-out)",
+        "Top-1 accuracy by true category, 3 repeats each; labels are correct/diagnoses. "
+        "Same 25 faults, fixes chosen after seeing v1.",
+        top=80,
+    )
+
+
+def category_bars(per_cat: dict[str, dict], title: str, caption: str, top: int = 64) -> str:
+    keys = list(per_cat)
+    cats = sorted(next(iter(per_cat.values())))
+    W, H, L, T, B = 760, 360 + top - 64, 48, top, 70
     pw, ph = W - L - 20, H - T - B
     band = pw / len(cats)
-    bw = min(26, (band - 18) / len(models))
-    body = _legend(L, 50, [short(m) for m in models])
+    bw = min(26, (band - 18) / len(keys))
+    body = _legend(L, 50, keys)
     for p in (0, 25, 50, 75, 100):
         y = T + ph * (1 - p / 100)
         body.append(f"<line x1='{L}' x2='{W - 20}' y1='{y:.1f}' y2='{y:.1f}' stroke='{GRID}'/>")
         body.append(_text(L - 6, y + 4, f"{p}%", "end"))
     for ci, c in enumerate(cats):
-        x0 = L + ci * band + (band - bw * len(models) - 2 * (len(models) - 1)) / 2
-        for mi, m in enumerate(models):
-            a = metrics["models"][m]["per_category"][c]["top1"]
+        x0 = L + ci * band + (band - bw * len(keys) - 2 * (len(keys) - 1)) / 2
+        for ki, k in enumerate(keys):
+            a = per_cat[k][c]["top1"]
             v = a["rate"] or 0
-            x = x0 + mi * (bw + 2)
+            x = x0 + ki * (bw + 2)
             h = ph * v
-            body.append(_bar(x, T + ph - h, bw, h, SERIES[short(m)]))
+            body.append(_bar(x, T + ph - h, bw, h, SERIES[k]))
             body.append(_text(x + bw / 2, T + ph - h - 4, f"{a['k']}/{a['n']}", "middle", size=10))
         body.append(
             _text(L + ci * band + band / 2, T + ph + 18, c.replace("_", " "), "middle", INK)
         )
-        n = metrics["models"][models[0]]["per_category"][c]["faults"]
+        n = per_cat[keys[0]][c]["faults"]
         body.append(
             _text(L + ci * band + band / 2, T + ph + 33, f"{n} fault(s)", "middle", size=10)
         )
-    body.append(
-        _text(
-            L,
-            H - 12,
-            "Top-1 category accuracy on detected faults, by true "
-            "category; labels are correct/diagnoses (all repeats).",
-            size=11,
-        )
-    )
-    return _svg(W, H, body, "Diagnosis accuracy by category")
+    body.append(_text(L, H - 12, caption, size=11))
+    return _svg(W, H, body, title)
 
 
 def confusion(model: str, conf: dict[str, dict[str, int]]) -> str:

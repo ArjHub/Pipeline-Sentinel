@@ -11,6 +11,7 @@ from sentinel.events.models import (
     JobMetric,
     RunContext,
     TaskRun,
+    UnexpectedValue,
     parse_event,
 )
 from sentinel.events.sinks import EventSink, JsonlFileSink, MemorySink, NullSink, sink_from_env
@@ -32,6 +33,7 @@ __all__ = [
     "NullSink",
     "RunContext",
     "TaskRun",
+    "UnexpectedValue",
     "parse_event",
     "sink_from_env",
 ]

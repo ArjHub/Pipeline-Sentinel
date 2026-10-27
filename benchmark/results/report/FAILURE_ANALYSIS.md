@@ -116,6 +116,11 @@ Great Expectations has no single observed value for them, and the tool serialise
 data. A fix that "backfills the nulls" would miss the real defect. The root-cause judge
 rated all 8 `mismatch`.
 
+Found later, in the blind human sample: the same gap hits the **duplicate load** F-J8PS66.
+The uniqueness check also reports `"null"`, and a Haiku diagnosis said "payment_id is null
+for all 4166 rows". The judge rated it `partial`, because "volume doubles" was right, and
+you rated it `mismatch`. So the 8 above is a lower bound.
+
 ## 7. Phase 4 known issues, measured on the benchmark
 
 | Phase 4 issue | Haiku | Sonnet | Verdict |
@@ -135,3 +140,66 @@ accuracy-on-detected. Caveat: the catalog was built in Phase 5a with a check tha
 scenario raises its expected incident ("0 expectation mismatches"). These faults are ones
 the four detectors are designed to catch, so 25/25 says the detectors work on the faults
 they were built for, not that they catch every fault.
+
+## 9. How far to trust the judges (judge vs. human, 15 blind items)
+
+Fix score: 14/15 exact, 15/15 within one, quadratic kappa 0.94 (bootstrap 95% CI
+0.59–1.00). Root-cause verdict: 12/15 exact, Cohen's kappa 0.61 (0.38–1.00). All 3
+root-cause disagreements are the judge saying `partial` where the human said `mismatch`.
+These are the two OOM `unknown`s and F-J8PS66 above. Every `match` agreed (10/10).
+
+So the counts above that rely on `match` are supported. The judge's `partial` is lenient,
+and should be read with `mismatch` as "not the stated root cause". The sample has no fix
+scored 0, and only two scored 1, so the low end of the fix rubric is the least validated
+part. Details are in the README ("Judge vs. human agreement").
+
+
+## 10. Phase 5c: post-hoc tool fixes (not held-out)
+
+Everything above is v1 and stays the headline. Phase 5c is **post-hoc**: the three fixes
+were chosen after reading the failures above, and measured on the **same 25 faults**. So
+the "after" numbers show these fixes remove these failures. They are not an estimate of
+accuracy on unseen faults. `prompts/diagnosis_v1.md` was not edited. Haiku 5.5 only, 3
+repeats, run label `posthoc-tool-fixes`, on scenario lakes rebuilt with the fixed
+instrumentation (`data/benchmark-posthoc-tool-fixes`; the v1 lakes and results are
+untouched). Numbers: `report/posthoc/`.
+
+The fixes:
+- **(a) Logs:** the failure callback keeps terminal JVM error lines from anywhere in the
+  task log, ahead of the 60-line tail. `get_error_logs` returns them in a `terminal_errors`
+  field that truncation can't cut.
+- **(b) DQ:** the checkpoint keeps GX's sample of unexpected values and the null count.
+  `get_dq_failures` reports those instead of `"observed_value": "null"`.
+- **(c) Guardrail:** if the top cause is `unknown`, `retry_safe` is forced to false in the
+  `Diagnosis` model.
+
+| Failure (v1 section) | v1 | post-hoc | What happened |
+|---|---|---|---|
+| 1. OOM → `unknown` | 0/9 right, 9 `unknown`, 9 unsafe "safe" | **9/9 `oom`**, 0 `unknown`, **2** unsafe "safe" | (a) works: every repeat quotes the `OutOfMemoryError` line. Root cause is still mostly `partial` (2/9 `match`): no tool shows the task's `JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize` setting, so the model can name the OOM but not why the limit was so low (**remaining tool gap**). 2 repeats called the retry safe, "if the memory pressure was transient" (**model error / prompt gap**). The guardrail doesn't apply, because the top cause is now `oom`, not `unknown` |
+| 2. Late upstream DAG → `late_data` | 0/3 | 0/3 | Untouched by the fixes; still the category-boundary prompt gap |
+| 3. Unreachable source → `unknown` | 2/3 | 3/3 | Not a fix: this is the fault that flipped between repeats in v1 |
+| 4. Bad deploy read as DQ | 2/3 (F-5RX3GD) | 2/3 | Same pattern, one repeat |
+| 5. Business dip (truth `unknown`) | 3/3 | **2/3**: r1 said `data_quality` | New miss on the orders incident. Same prompt gap as v1's payments incident ("volume far off normal" is listed under `data_quality`); run-to-run variation, not caused by a fix |
+| 6. DQ "nulls" | root `mismatch` 6/6 | F-CGQXGR **3/3 `match`**; F-8EHKFX **3/3 `partial`** | (b) works for the negative amounts (`-247.57, -225.13, ...`). For the invalid code it introduced **a new tool bug**: string samples are JSON-encoded twice, so the model saw `"\"upi-collect\""` and blamed "literal quote characters / serialisation". Duplicate load F-J8PS66: 1/3 `match` (v1 0/3) |
+
+**The guardrail, separated from the tool fixes.** Applied offline to v1's 66 scored
+diagnoses (no API), it alone makes `retry_safe` 66/66 correct: every v1 error was an
+`unknown` OOM. In the post-hoc run it fired twice, both on the business dip, whose
+`retry_safe` is unscored ("either"). The OOM fixes turned "honest `unknown` + safe", which
+the guardrail catches, into "`oom` + safe" in 2 of 9 repeats, which it doesn't.
+
+**Noise floor.** Faults the fixes don't touch also moved: late_data root `match` went 7/9
+→ 5/9, and a few schema / deploy repeats went `match` → `partial`. So root-verdict changes
+of about ±2 per category are run-to-run (model + judge) variation. The OOM category gain
+(0 → 9 of 9) and F-CGQXGR (0 → 3 of 3 `match`) are well beyond that; the rest is not.
+
+**Not done, proposed:**
+- **Fix the double encoding:** pass sample values through as JSON values, not
+  `json.dumps` strings.
+- **A task-environment tool, or the OOM line's own `limit:` figure:** the OOM `limit`
+  figure is in the quoted line, but the setting that caused it is not.
+- **Collapse near-duplicate `terminal_errors`:** the same OOM appears up to 5 times, with
+  different timestamps or a `Caused by:` prefix.
+- **Extend the guardrail to `oom`:** an OOM is never retry-safe without a config change.
+
+Each of these would be another post-hoc change on the same faults.

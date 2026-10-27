@@ -99,3 +99,42 @@ def test_callback_never_raises(monkeypatch) -> None:
     monkeypatch.setattr(cb, "sink_from_env", lambda: Boom())
     cb.on_failure(_ctx(FakeTI(), ValueError("x")))  # must not raise
     cb.on_success({"not": "a real context"})  # must not raise either
+
+
+def _write_log(tmp_path, monkeypatch, lines: list[str]) -> FakeTI:
+    monkeypatch.setenv("AIRFLOW__LOGGING__BASE_LOG_FOLDER", str(tmp_path))
+    ti = FakeTI()
+    log_dir = tmp_path / f"dag_id={ti.dag_id}" / f"run_id={ti.run_id}" / f"task_id={ti.task_id}"
+    log_dir.mkdir(parents=True)
+    (log_dir / "attempt=2.log").write_text("\n".join(lines))
+    return ti
+
+
+OOM = (
+    "py4j.protocol.Py4JJavaError: An error occurred while calling o57.save.\n"
+    ": java.lang.OutOfMemoryError: Cannot reserve 8192 bytes of direct buffer memory"
+)
+
+
+def test_terminal_jvm_error_outside_the_tail_is_kept(sink, tmp_path, monkeypatch) -> None:
+    # Phase 5c: PySpark's Py4J teardown pushed the OutOfMemoryError out of the last 60
+    # lines, so every OOM fault in the v1 benchmark was diagnosed `unknown`.
+    teardown = [f"py4j.clientserver - Closing down clientserver connection {i}" for i in range(150)]
+    ti = _write_log(
+        tmp_path, monkeypatch, ["starting job", *OOM.splitlines(), *teardown, "exit code 1"]
+    )
+    cb.on_failure(_ctx(ti, RuntimeError("Bash command failed. exit code 1")))
+    tail = sink.events[1].payload.traceback
+    head, rest = tail.split(cb.TAIL_HEADER + "\n")
+    assert head.startswith(cb.EARLIER_HEADER)
+    assert "java.lang.OutOfMemoryError: Cannot reserve 8192 bytes" in head
+    assert "o57.save" not in head  # only the terminal-error line, not its neighbours
+    assert rest.endswith("exit code 1") and len(rest.splitlines()) == cb.LOG_TAIL_LINES
+    assert len(tail) <= cb.LOG_TAIL_MAX_CHARS
+
+
+def test_terminal_error_already_in_the_tail_is_not_repeated(sink, tmp_path, monkeypatch) -> None:
+    ti = _write_log(tmp_path, monkeypatch, [f"line {i}" for i in range(100)] + OOM.splitlines())
+    cb.on_failure(_ctx(ti, RuntimeError("exit code 1")))
+    tail = sink.events[1].payload.traceback
+    assert cb.EARLIER_HEADER not in tail and tail.count("OutOfMemoryError") == 1

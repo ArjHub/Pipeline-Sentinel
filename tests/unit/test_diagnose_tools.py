@@ -9,7 +9,8 @@ import pytest
 
 from sentinel.detect import load_config
 from sentinel.diagnose.tools import TOOL_DEFS, Toolbox
-from tests.unit.detect_fixtures import end_of
+from sentinel.events import DQResult, Event, ExpectationOutcome, UnexpectedValue
+from tests.unit.detect_fixtures import Run, end_of
 from tests.unit.diagnose_fixtures import DS, build_lake, log_event
 
 
@@ -93,3 +94,86 @@ def test_output_is_capped_by_dropping_items_not_breaking_json(tmp_path) -> None:
     text, _ = box.call("get_metric_history", {"days": 28})
     out = json.loads(text)  # still valid JSON
     assert len(text) <= 900 and out["truncated_items"] > 0
+
+
+def test_terminal_jvm_error_survives_traceback_truncation(tmp_path) -> None:
+    # Phase 5c: the fatal line sits mid-traceback, where truncation (head third + tail
+    # two-thirds of 1500 chars) would cut it; it must still reach the model.
+    teardown = "\n".join(f"py4j teardown line {i}" for i in range(200))
+    tb = f"{teardown[:2000]}\n: java.lang.OutOfMemoryError: Java heap space\n{teardown}"
+    oom = log_event(
+        "orders_ingest",
+        "ingest_orders",
+        "task ingest_orders failed: exit code 1",
+        end_of(DS) + timedelta(minutes=33),
+        traceback=tb,
+    )
+    box = Toolbox(tmp_path, load_config(), build_lake(tmp_path, extra=[oom]))
+    out, _ = call(box, "get_error_logs", task_id="ingest_orders")
+    [item] = [i for i in out["untrusted_data"] if i["message"].startswith("task ingest_orders")]
+    assert item["terminal_errors"] == [": java.lang.OutOfMemoryError: Java heap space"]
+    assert "OutOfMemoryError" not in item["traceback_tail"]  # truncated away, as before
+    others = [i for i in out["untrusted_data"] if i is not item]
+    assert all("terminal_errors" not in i for i in others)  # absent when there are none
+
+
+def _dq_event(results) -> Event:
+    r = Run("payments_etl", DS, end_of(DS) + timedelta(minutes=50))
+    return r._emit(
+        "validate_payments",
+        DQResult(
+            dataset="payments",
+            suite_name="payments.v1",
+            success=False,
+            evaluated=len(results),
+            failed=len(results),
+            row_count=2000,
+            results=results,
+        ),
+    )
+
+
+def test_dq_failures_report_the_real_unexpected_values(tmp_path) -> None:
+    # Phase 5c: GX has no single observed value for column-map expectations; the tool
+    # used to print "null", and the model read non-null bad values as nulls.
+    negative = ExpectationOutcome(
+        expectation_type="expect_column_values_to_be_between",
+        column="amount",
+        success=False,
+        unexpected_count=64,
+        unexpected_values=[
+            UnexpectedValue(value=-120.5, count=1),
+            UnexpectedValue(value=-3, count=1),
+        ],
+        missing_count=0,
+    )
+    method = ExpectationOutcome(
+        expectation_type="expect_column_values_to_be_in_set",
+        column="method",
+        success=False,
+        unexpected_count=812,
+        unexpected_values=[UnexpectedValue(value="UPI-COLLECT", count=812)],
+        missing_count=0,
+    )
+    old_style = ExpectationOutcome(  # a 1.1 event (built before the fix): no sample
+        expectation_type="expect_column_values_to_not_be_null", column="paid_ts", success=False
+    )
+    box = Toolbox(
+        tmp_path,
+        load_config(),
+        build_lake(tmp_path, extra=[_dq_event([negative, method, old_style])]),
+    )
+    out, _ = call(box, "get_dq_failures", pipeline="payments_etl")
+    amount, method_out, old = out["untrusted_data"][0]["failed_expectations"]
+    assert amount["unexpected_values_sample"] == [
+        {"value": "-120.5", "count": 1},
+        {"value": "-3", "count": 1},
+    ]
+    assert amount["null_count"] == 0 and "observed_value" not in amount
+    assert method_out["unexpected_values_sample"] == [{"value": '"UPI-COLLECT"', "count": 812}]
+    assert old == {
+        "expectation_type": "expect_column_values_to_not_be_null",
+        "column": "paid_ts",
+        "unexpected_count": None,
+    }
+    assert '"null"' not in json.dumps(out)

@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -116,8 +117,15 @@ def estimate(
     )
 
 
-def results_path(settings: Settings, split: str, model: str, prompt_version: str) -> Path:
-    return settings.results_dir / f"{split}__{model}__{prompt_version}" / "results.jsonl"
+def results_path(
+    settings: Settings, split: str, model: str, prompt_version: str, label: str = ""
+) -> Path:
+    """A labelled run (e.g. Phase 5c's `posthoc-tool-fixes`) gets its own folder, so it
+    never mixes with, or resumes into, the unlabelled run of the same model and prompt."""
+    if label and not re.fullmatch(r"[a-z0-9][a-z0-9-]*", label):
+        raise ValueError(f"run label must be lowercase letters, digits and dashes: {label!r}")
+    name = f"{split}__{model}__{prompt_version}" + (f"__{label}" if label else "")
+    return settings.results_dir / name / "results.jsonl"
 
 
 def load_results(path: Path) -> list[dict[str, Any]]:
@@ -143,10 +151,13 @@ def pending(items: list[Item], done: list[dict[str, Any]], retry_errors: bool) -
     return [i for i in items if i.key not in finished]
 
 
-def _record(item: Item, run, cfg: DiagnosisConfig, scenario_hash: str, cat_sha: str) -> dict:
+def _record(
+    item: Item, run, cfg: DiagnosisConfig, scenario_hash: str, cat_sha: str, label: str = ""
+) -> dict:
     d = run.diagnosis
     return {
         "key": item.key,
+        "label": label,
         "fault_id": item.fault_id,
         "incident_id": item.incident_id,
         "repeat": item.repeat,
@@ -158,6 +169,7 @@ def _record(item: Item, run, cfg: DiagnosisConfig, scenario_hash: str, cat_sha: 
         "top_category": d.top.category if d else None,
         "top_confidence": d.top.confidence if d else None,
         "retry_safe": d.retry_safe if d else None,
+        "guardrail_applied": d.guardrail_applied if d else None,
         "llm_calls": run.llm_calls,
         "tool_calls": run.tool_calls,
         "tools_used": run.tools_used,
@@ -186,13 +198,14 @@ def run(
     resume: bool = False,
     retry_errors: bool = False,
     judge: bool = False,
+    label: str = "",
     ledger: Ledger | None = None,
     llm_factory: Callable[[str], LLMClient] = AnthropicLLM,
     out: Callable[[str], None] = print,
 ) -> int:
     cfg = load_config(model=model, prompt=prompt)
     ledger = ledger or Ledger(budget_usd=cfg.budget_usd)
-    path = results_path(settings, split, model, cfg.prompt_version)
+    path = results_path(settings, split, model, cfg.prompt_version, label)
     done = load_results(path)
     if done and not resume and not dry_run:
         out(
@@ -209,6 +222,7 @@ def run(
         f"repeats={repeats}"
     )
     out(f"results: {path}")
+    out(f"scenarios: {settings.work_dir / 'scenarios'}")
     out(
         f"work items: {len(items)} total, {len(items) - len(todo)} already done, {len(todo)} to run"
     )
@@ -266,7 +280,7 @@ def run(
         )
         r = Agent(cfg, llm, ledger, purpose="benchmark").diagnose(incident, toolbox)
         m = scenario.manifest(settings, item.fault_id) or {}
-        append_result(path, _record(item, r, cfg, m.get("build_hash", ""), cat_sha))
+        append_result(path, _record(item, r, cfg, m.get("build_hash", ""), cat_sha, label))
         out(
             f"[{n}/{len(todo)}] {item.fault_id} r{item.repeat} {r.status} "
             f"${r.cost_usd:.5f} {r.latency_s:.1f}s"
