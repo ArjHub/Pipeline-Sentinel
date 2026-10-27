@@ -20,6 +20,8 @@ ROOT = load().catalog_path.parents[2]
 # The Phase 4 prompt, frozen for the benchmark (README: sha256 3507e5f0...b31d).
 DIAGNOSIS_V1_SHA256 = "3507e5f05b152391fc4dce6539ff71302e204976fd83c687d5a3ba425038b31d"
 JUDGE_V1_SHA256 = "e9fdaad0fb3b9c2c9c126f29959e310b83ab1e6cf990c9e6236518e3d2343fe3"
+# Phase 5b fix-quality rubric, frozen before any benchmark diagnosis was read.
+JUDGE_FIX_V1_SHA256 = "31b78cf4215a6b03336a26f10236d42b5d694f4cb47c5b9b89517109752ddb7f"
 
 
 def _sha(path: str) -> str:
@@ -29,6 +31,7 @@ def _sha(path: str) -> str:
 def test_prompts_are_frozen() -> None:
     assert _sha("prompts/diagnosis_v1.md") == DIAGNOSIS_V1_SHA256
     assert _sha("prompts/judge_v1.md") == JUDGE_V1_SHA256
+    assert _sha("prompts/judge_fix_v1.md") == JUDGE_FIX_V1_SHA256
 
 
 def test_judge_verdict_is_ledgered_as_judge(tmp_path) -> None:
@@ -60,6 +63,36 @@ def test_judge_bad_output_is_an_error_verdict_not_a_crash(tmp_path) -> None:
         llm, Ledger(tmp_path / "l.json"), prompt="p", root_cause="t", diagnosis=None, ref="x"
     )
     assert v.verdict == "error"
+
+
+def test_fix_judge_scores_and_shows_the_fix_and_retry(tmp_path) -> None:
+    ledger = Ledger(tmp_path / "l.json")
+    llm = ScriptedLLM([response([text(json.dumps({"score": 2, "reason": "r"}))])])
+    top = {
+        "category": "oom",
+        "explanation": "e",
+        "suggested_fix": "raise the limit",
+        "retry_safe": False,
+        "retry_safe_reason": "still set",
+        "confidence": 0.9,
+    }
+    s = judge.judge_fix(
+        llm, ledger, prompt="p", root_cause="truth", diagnosis={"root_causes": [top]}, ref="F-X"
+    )
+    assert s.score == 2 and s.cost_usd > 0
+    content = llm.requests[0]["messages"][0]["content"]
+    assert "raise the limit" in content and "retry_safe_reason" in content
+    assert "confidence" not in content
+    assert [c["purpose"] for c in json.loads(ledger.path.read_text())["calls"]] == ["judge"]
+
+
+@pytest.mark.parametrize("reply", ["not json", json.dumps({"score": 7, "reason": "r"})])
+def test_fix_judge_bad_output_is_none_not_a_crash(tmp_path, reply) -> None:
+    llm = ScriptedLLM([response([text(reply)])])
+    s = judge.judge_fix(
+        llm, Ledger(tmp_path / "l.json"), prompt="p", root_cause="t", diagnosis=None, ref="x"
+    )
+    assert s.score is None
 
 
 def test_judge_is_budget_gated(tmp_path) -> None:

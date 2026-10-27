@@ -1,0 +1,32 @@
+# Ground truth for `retry_safe`, per fault template (Phase 5b).
+#
+# The Phase 5a catalog has no retry label, so this was written on 2026-10-27, before any
+# benchmark diagnosis was read, from the definition in prompts/diagnosis_v1.md:
+# "true only if re-running the failed tasks *as they are now* is expected to succeed and
+# not make things worse ... false if the input is still broken or a bad deploy is still
+# live". Nothing in a scenario is repaired after the fault, so a broken input stays broken.
+#
+# "either" = the evidence can't settle it, or nothing failed; those faults are left out of
+# retry_safe accuracy (and counted separately).
+
+[truth]
+"schema.drop" = false            # the column is still missing from the extract
+"schema.rename" = false
+"schema.retype" = false
+"schema.add" = "either"          # nothing failed; a re-run succeeds but there is nothing to retry
+"late.stale_snapshot" = false    # the stale snapshot is still the delivered file
+"late.previous_day_file" = false
+"late.truncated" = false
+"dq.duplicate_load" = false      # the duplicated extract is still there
+"dq.null_spike" = false
+"dq.invalid_values" = false
+"dq.out_of_range" = false
+"oom.direct_memory" = false      # the task environment still sets the direct-memory limit
+"deploy.code_regression" = false # the regressed code is still deployed
+"upstream.dag_late" = true       # the late upstream run has since finished; the sensor would pass now
+"upstream.dag_missing" = false   # the upstream run never happened; the sensor would time out again
+"upstream.source_unreachable" = "either"  # no evidence either way on whether the endpoint is back
+"amb.permissions" = false        # the file is still mode 000
+"amb.gzip_as_csv" = false
+"amb.timezone_shift" = false
+"amb.business_dip" = "either"    # nothing failed; the data is valid

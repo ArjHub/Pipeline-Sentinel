@@ -53,10 +53,12 @@ max_usd = { "claude-haiku-5-5" = 0.00355, "claude-sonnet-5-5" = 0.04308 }
 high_multiple = 2.0
 
 [judge]
-# LLM judge for the free-text root cause (Phase 5b scoring), purpose "judge" in the
-# ledger. Estimated per judged diagnosis; not run in Phase 5a.
+# LLM judges (Phase 5b scoring), purpose "judge" in the ledger: the root cause
+# (match/partial/mismatch) and, separately, the suggested fix (0-3 rubric). Estimated per
+# judge call.
 model = "claude-haiku-5-5"
 prompt_file = "prompts/judge_v1.md"
+fix_prompt_file = "prompts/judge_fix_v1.md"
 max_tokens = 1024
 estimate_usd = 0.0006
 

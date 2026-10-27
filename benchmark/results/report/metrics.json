@@ -1,0 +1,850 @@
+{
+  "prompt": "diagnosis_v1",
+  "detection": {
+    "injected_faults": 25,
+    "detected": {
+      "k": 25,
+      "n": 25,
+      "rate": 1.0
+    },
+    "missed": [],
+    "clean_runs": 5,
+    "false_positive_incidents_on_clean_runs": 0,
+    "clean_runs_with_any_finding": 0,
+    "raw_findings": 55,
+    "primary_incidents": 26,
+    "all_incidents": 46,
+    "primary_incidents_other_ds": 0,
+    "latency_from_night_start_s": {
+      "n": 25,
+      "mean": 206.4,
+      "median": 60.0,
+      "p90": 96.0,
+      "min": 60.0,
+      "max": 1860.0,
+      "total": 5160.0
+    },
+    "latency_from_first_evidence_s": {
+      "n": 25,
+      "mean": 40.084,
+      "median": 39.9,
+      "p90": 49.28,
+      "min": 11.0,
+      "max": 59.2,
+      "total": 1002.1
+    },
+    "detected_as": {
+      "volume_anomaly": 2,
+      "failed_job": 15,
+      "schema_change": 5,
+      "late_data": 3
+    }
+  },
+  "models": {
+    "claude-haiku-5-5": {
+      "diagnoses": 78,
+      "fault_level_diagnoses": 75,
+      "repeats": 3,
+      "status": {
+        "ok": 78
+      },
+      "accuracy_detected": {
+        "top1": {
+          "k": 61,
+          "n": 75,
+          "rate": 0.8133
+        },
+        "top3": {
+          "k": 62,
+          "n": 75,
+          "rate": 0.8267
+        },
+        "top1_and_root_cause_match": {
+          "k": 38,
+          "n": 75,
+          "rate": 0.5067
+        },
+        "top1_per_repeat": [
+          {
+            "k": 20,
+            "n": 25,
+            "rate": 0.8
+          },
+          {
+            "k": 21,
+            "n": 25,
+            "rate": 0.84
+          },
+          {
+            "k": 20,
+            "n": 25,
+            "rate": 0.8
+          }
+        ]
+      },
+      "accuracy_end_to_end": {
+        "top1": {
+          "k": 61,
+          "n": 75,
+          "rate": 0.8133
+        },
+        "top3": {
+          "k": 62,
+          "n": 75,
+          "rate": 0.8267
+        },
+        "top1_and_root_cause_match": {
+          "k": 38,
+          "n": 75,
+          "rate": 0.5067
+        }
+      },
+      "per_category": {
+        "bad_deploy": {
+          "top1": {
+            "k": 11,
+            "n": 12,
+            "rate": 0.9167
+          },
+          "top3": {
+            "k": 12,
+            "n": 12,
+            "rate": 1.0
+          },
+          "faults": 4
+        },
+        "data_quality": {
+          "top1": {
+            "k": 15,
+            "n": 15,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 15,
+            "n": 15,
+            "rate": 1.0
+          },
+          "faults": 5
+        },
+        "late_data": {
+          "top1": {
+            "k": 9,
+            "n": 9,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 9,
+            "n": 9,
+            "rate": 1.0
+          },
+          "faults": 3
+        },
+        "oom": {
+          "top1": {
+            "k": 0,
+            "n": 9,
+            "rate": 0.0
+          },
+          "top3": {
+            "k": 0,
+            "n": 9,
+            "rate": 0.0
+          },
+          "faults": 3
+        },
+        "schema_drift": {
+          "top1": {
+            "k": 15,
+            "n": 15,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 15,
+            "n": 15,
+            "rate": 1.0
+          },
+          "faults": 5
+        },
+        "unknown": {
+          "top1": {
+            "k": 6,
+            "n": 6,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 6,
+            "n": 6,
+            "rate": 1.0
+          },
+          "faults": 2
+        },
+        "upstream_outage": {
+          "top1": {
+            "k": 5,
+            "n": 9,
+            "rate": 0.5556
+          },
+          "top3": {
+            "k": 5,
+            "n": 9,
+            "rate": 0.5556
+          },
+          "faults": 3
+        }
+      },
+      "confusion": {
+        "bad_deploy": {
+          "schema_drift": 0,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 11,
+          "upstream_outage": 0,
+          "data_quality": 1,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        },
+        "data_quality": {
+          "schema_drift": 0,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 15,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        },
+        "late_data": {
+          "schema_drift": 0,
+          "late_data": 9,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        },
+        "oom": {
+          "schema_drift": 0,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 9,
+          "(no diagnosis)": 0
+        },
+        "schema_drift": {
+          "schema_drift": 15,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        },
+        "unknown": {
+          "schema_drift": 0,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 6,
+          "(no diagnosis)": 0
+        },
+        "upstream_outage": {
+          "schema_drift": 0,
+          "late_data": 3,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 5,
+          "data_quality": 0,
+          "unknown": 1,
+          "(no diagnosis)": 0
+        }
+      },
+      "root_cause_judge": {
+        "match": 42,
+        "partial": 23,
+        "mismatch": 10
+      },
+      "fix_quality_judge": {
+        "scores": {
+          "3": 43,
+          "2": 18,
+          "1": 13,
+          "0": 1
+        },
+        "mean": 2.373,
+        "unjudged": 0
+      },
+      "unknown": {
+        "truth_allows_unknown": 9,
+        "correct_unknown": 6,
+        "specific_answer_on_unknown_truth": 0,
+        "specific_and_accepted_on_unknown_truth": 3,
+        "wrong_unknown": 10,
+        "predicted_unknown": 16,
+        "unknown_rate": {
+          "k": 16,
+          "n": 75,
+          "rate": 0.2133
+        },
+        "early_unknown_le_2_tool_calls": 0
+      },
+      "calibration": [
+        {
+          "bucket": "0.00-0.50",
+          "n": 7,
+          "mean_confidence": 0.3714,
+          "accuracy": 0.4286
+        },
+        {
+          "bucket": "0.50-0.70",
+          "n": 20,
+          "mean_confidence": 0.57,
+          "accuracy": 0.6
+        },
+        {
+          "bucket": "0.70-0.85",
+          "n": 32,
+          "mean_confidence": 0.7672,
+          "accuracy": 0.9375
+        },
+        {
+          "bucket": "0.85-1.00",
+          "n": 16,
+          "mean_confidence": 0.8888,
+          "accuracy": 1.0
+        }
+      ],
+      "brier": 0.1269,
+      "retry_safe": {
+        "scored": 66,
+        "correct": {
+          "k": 57,
+          "n": 66,
+          "rate": 0.8636
+        },
+        "said_safe_when_unsafe": 9,
+        "said_unsafe_when_safe": 0,
+        "not_scored_either": 9
+      },
+      "per_diagnosis": {
+        "latency_s": {
+          "n": 78,
+          "mean": 13.959167,
+          "median": 12.828,
+          "p90": 17.4953,
+          "min": 7.713,
+          "max": 44.805,
+          "total": 1088.815
+        },
+        "cost_usd": {
+          "n": 78,
+          "mean": 0.002496,
+          "median": 0.002543,
+          "p90": 0.002987,
+          "min": 0.0015471,
+          "max": 0.00394671,
+          "total": 0.19465
+        },
+        "llm_calls": {
+          "n": 78,
+          "mean": 2.410256,
+          "median": 2.0,
+          "p90": 3.0,
+          "min": 2,
+          "max": 4,
+          "total": 188
+        },
+        "tool_calls": {
+          "n": 78,
+          "mean": 4.615385,
+          "median": 5.0,
+          "p90": 6.0,
+          "min": 2,
+          "max": 7,
+          "total": 360
+        },
+        "input_tokens_incl_cache": {
+          "n": 78,
+          "mean": 18010.602564,
+          "median": 15284.5,
+          "p90": 25957.0,
+          "min": 10414,
+          "max": 36546,
+          "total": 1404827
+        },
+        "output_tokens": {
+          "n": 78,
+          "mean": 2348.858974,
+          "median": 2308.5,
+          "p90": 3083.9,
+          "min": 1155,
+          "max": 4218,
+          "total": 183211
+        }
+      },
+      "known_issues": {
+        "diagnoses_with_repeated_tool_calls": {
+          "k": 12,
+          "n": 78,
+          "rate": 0.1538
+        },
+        "repeated_tool_calls_total": 14,
+        "irrelevant_deploy_cited": {
+          "k": 18,
+          "n": 63,
+          "rate": 0.2857
+        },
+        "bad_deploy_ranked_anywhere_when_not": {
+          "k": 8,
+          "n": 63,
+          "rate": 0.127
+        },
+        "bad_deploy_predicted_when_not": 0
+      },
+      "variation": {
+        "faults": 25,
+        "same_top_category_all_repeats": {
+          "k": 23,
+          "n": 25,
+          "rate": 0.92
+        },
+        "correct_in_k_of_n_repeats": {
+          "3/3": 19,
+          "2/3": 2,
+          "1/3": 0,
+          "0/3": 4
+        },
+        "flipping_faults": [
+          "F-5RX3GD",
+          "F-QXQHZ5"
+        ],
+        "same_retry_safe_all_repeats": {
+          "k": 24,
+          "n": 25,
+          "rate": 0.96
+        }
+      }
+    },
+    "claude-sonnet-5-5": {
+      "diagnoses": 26,
+      "fault_level_diagnoses": 25,
+      "repeats": 1,
+      "status": {
+        "ok": 26
+      },
+      "accuracy_detected": {
+        "top1": {
+          "k": 21,
+          "n": 25,
+          "rate": 0.84
+        },
+        "top3": {
+          "k": 21,
+          "n": 25,
+          "rate": 0.84
+        },
+        "top1_and_root_cause_match": {
+          "k": 14,
+          "n": 25,
+          "rate": 0.56
+        },
+        "top1_per_repeat": [
+          {
+            "k": 21,
+            "n": 25,
+            "rate": 0.84
+          }
+        ]
+      },
+      "accuracy_end_to_end": {
+        "top1": {
+          "k": 21,
+          "n": 25,
+          "rate": 0.84
+        },
+        "top3": {
+          "k": 21,
+          "n": 25,
+          "rate": 0.84
+        },
+        "top1_and_root_cause_match": {
+          "k": 14,
+          "n": 25,
+          "rate": 0.56
+        }
+      },
+      "per_category": {
+        "bad_deploy": {
+          "top1": {
+            "k": 4,
+            "n": 4,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 4,
+            "n": 4,
+            "rate": 1.0
+          },
+          "faults": 4
+        },
+        "data_quality": {
+          "top1": {
+            "k": 5,
+            "n": 5,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 5,
+            "n": 5,
+            "rate": 1.0
+          },
+          "faults": 5
+        },
+        "late_data": {
+          "top1": {
+            "k": 3,
+            "n": 3,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 3,
+            "n": 3,
+            "rate": 1.0
+          },
+          "faults": 3
+        },
+        "oom": {
+          "top1": {
+            "k": 0,
+            "n": 3,
+            "rate": 0.0
+          },
+          "top3": {
+            "k": 0,
+            "n": 3,
+            "rate": 0.0
+          },
+          "faults": 3
+        },
+        "schema_drift": {
+          "top1": {
+            "k": 5,
+            "n": 5,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 5,
+            "n": 5,
+            "rate": 1.0
+          },
+          "faults": 5
+        },
+        "unknown": {
+          "top1": {
+            "k": 2,
+            "n": 2,
+            "rate": 1.0
+          },
+          "top3": {
+            "k": 2,
+            "n": 2,
+            "rate": 1.0
+          },
+          "faults": 2
+        },
+        "upstream_outage": {
+          "top1": {
+            "k": 2,
+            "n": 3,
+            "rate": 0.6667
+          },
+          "top3": {
+            "k": 2,
+            "n": 3,
+            "rate": 0.6667
+          },
+          "faults": 3
+        }
+      },
+      "confusion": {
+        "bad_deploy": {
+          "schema_drift": 0,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 4,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        },
+        "data_quality": {
+          "schema_drift": 0,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 5,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        },
+        "late_data": {
+          "schema_drift": 0,
+          "late_data": 3,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        },
+        "oom": {
+          "schema_drift": 0,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 3,
+          "(no diagnosis)": 0
+        },
+        "schema_drift": {
+          "schema_drift": 5,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        },
+        "unknown": {
+          "schema_drift": 0,
+          "late_data": 0,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 0,
+          "data_quality": 0,
+          "unknown": 2,
+          "(no diagnosis)": 0
+        },
+        "upstream_outage": {
+          "schema_drift": 0,
+          "late_data": 1,
+          "oom": 0,
+          "bad_deploy": 0,
+          "upstream_outage": 2,
+          "data_quality": 0,
+          "unknown": 0,
+          "(no diagnosis)": 0
+        }
+      },
+      "root_cause_judge": {
+        "match": 15,
+        "partial": 8,
+        "mismatch": 2
+      },
+      "fix_quality_judge": {
+        "scores": {
+          "3": 13,
+          "2": 7,
+          "1": 5,
+          "0": 0
+        },
+        "mean": 2.32,
+        "unjudged": 0
+      },
+      "unknown": {
+        "truth_allows_unknown": 3,
+        "correct_unknown": 2,
+        "specific_answer_on_unknown_truth": 0,
+        "specific_and_accepted_on_unknown_truth": 1,
+        "wrong_unknown": 3,
+        "predicted_unknown": 5,
+        "unknown_rate": {
+          "k": 5,
+          "n": 25,
+          "rate": 0.2
+        },
+        "early_unknown_le_2_tool_calls": 0
+      },
+      "calibration": [
+        {
+          "bucket": "0.00-0.50",
+          "n": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "bucket": "0.50-0.70",
+          "n": 8,
+          "mean_confidence": 0.5312,
+          "accuracy": 0.625
+        },
+        {
+          "bucket": "0.70-0.85",
+          "n": 12,
+          "mean_confidence": 0.7583,
+          "accuracy": 0.9167
+        },
+        {
+          "bucket": "0.85-1.00",
+          "n": 5,
+          "mean_confidence": 0.88,
+          "accuracy": 1.0
+        }
+      ],
+      "brier": 0.1231,
+      "retry_safe": {
+        "scored": 22,
+        "correct": {
+          "k": 19,
+          "n": 22,
+          "rate": 0.8636
+        },
+        "said_safe_when_unsafe": 3,
+        "said_unsafe_when_safe": 0,
+        "not_scored_either": 3
+      },
+      "per_diagnosis": {
+        "latency_s": {
+          "n": 26,
+          "mean": 9.410654,
+          "median": 9.459,
+          "p90": 11.491,
+          "min": 6.973,
+          "max": 12.839,
+          "total": 244.677
+        },
+        "cost_usd": {
+          "n": 26,
+          "mean": 0.031164,
+          "median": 0.030577,
+          "p90": 0.039062,
+          "min": 0.0224544,
+          "max": 0.0415364,
+          "total": 0.810263
+        },
+        "llm_calls": {
+          "n": 26,
+          "mean": 2.076923,
+          "median": 2.0,
+          "p90": 2.0,
+          "min": 2,
+          "max": 3,
+          "total": 54
+        },
+        "tool_calls": {
+          "n": 26,
+          "mean": 4.192308,
+          "median": 4.0,
+          "p90": 5.0,
+          "min": 3,
+          "max": 6,
+          "total": 109
+        },
+        "input_tokens_incl_cache": {
+          "n": 26,
+          "mean": 13425.0,
+          "median": 12284.0,
+          "p90": 16035.5,
+          "min": 10784,
+          "max": 19553,
+          "total": 349050
+        },
+        "output_tokens": {
+          "n": 26,
+          "mean": 949.846154,
+          "median": 955.0,
+          "p90": 1148.0,
+          "min": 656,
+          "max": 1303,
+          "total": 24696
+        }
+      },
+      "known_issues": {
+        "diagnoses_with_repeated_tool_calls": {
+          "k": 0,
+          "n": 26,
+          "rate": 0.0
+        },
+        "repeated_tool_calls_total": 0,
+        "irrelevant_deploy_cited": {
+          "k": 5,
+          "n": 21,
+          "rate": 0.2381
+        },
+        "bad_deploy_ranked_anywhere_when_not": {
+          "k": 1,
+          "n": 21,
+          "rate": 0.0476
+        },
+        "bad_deploy_predicted_when_not": 0
+      },
+      "variation": null
+    }
+  },
+  "manual": {
+    "trials": 10,
+    "human_correct": {
+      "k": 6,
+      "n": 10,
+      "rate": 0.6
+    },
+    "human_seconds": {
+      "n": 10,
+      "mean": 201.08,
+      "median": 175.0,
+      "p90": 409.18,
+      "min": 55.8,
+      "max": 506.2,
+      "total": 2010.8
+    },
+    "agent": {
+      "claude-haiku-5-5": {
+        "diagnosis_s": {
+          "n": 10,
+          "mean": 13.12,
+          "median": 13.4,
+          "p90": 15.01,
+          "min": 10.5,
+          "max": 15.1,
+          "total": 131.2
+        },
+        "detect_plus_diagnose_s": {
+          "n": 10,
+          "mean": 55.66,
+          "median": 52.9,
+          "p90": 65.45,
+          "min": 46.9,
+          "max": 74.0,
+          "total": 556.6
+        }
+      },
+      "claude-sonnet-5-5": {
+        "diagnosis_s": {
+          "n": 10,
+          "mean": 9.21,
+          "median": 9.15,
+          "p90": 11.58,
+          "min": 7.0,
+          "max": 12.3,
+          "total": 92.1
+        },
+        "detect_plus_diagnose_s": {
+          "n": 10,
+          "mean": 51.75,
+          "median": 49.6,
+          "p90": 62.23,
+          "min": 39.4,
+          "max": 67.0,
+          "total": 517.5
+        }
+      }
+    }
+  }
+}

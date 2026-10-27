@@ -16,7 +16,8 @@ export
 .DEFAULT_GOAL := help
 .PHONY: help env build up down clean ps logs deploy run-all query query-bronze replay-events land \
 	detect query-incidents break-it diagnose query-diagnoses demo-e2e \
-	benchmark benchmark-build benchmark-status benchmark-catalog manual-trial trial-inspect \
+	benchmark benchmark-build benchmark-status benchmark-detection benchmark-judge \
+	benchmark-score benchmark-human-sample benchmark-agreement benchmark-catalog manual-trial trial-inspect \
 	trial-incident trial-bronze test-benchmark \
 	schemas test test-unit test-dags test-e2e test-real-api lint fmt lock mem mem-profile
 
@@ -107,6 +108,24 @@ benchmark: ## Run the benchmark: MODEL= REPEATS= PROMPT=diagnosis_v1 SPLIT=bench
 	  "$(BENCH_PY) run --model $(BENCH_MODEL) --split $(SPLIT) --prompt $(PROMPT) \
 	  $(if $(REPEATS),--repeats $(REPEATS)) $(if $(DRY_RUN),--dry-run) $(if $(RESUME),--resume) \
 	  $(if $(RETRY_ERRORS),--retry-errors) $(if $(JUDGE),--judge)"
+
+BENCH_AN := $(JOBS_PY) -m benchmark.analysis
+
+benchmark-detection: ## Phase 5b: replay the detector's 60 s polls over the scenarios (no API)
+	$(BENCH) "$(BENCH_AN) detection"
+
+benchmark-judge: ## Phase 5b: LLM judges over one run: MODEL= [DRY_RUN=1] (paid, resumable)
+	$(COMPOSE) run --rm -e ANTHROPIC_API_KEY benchmark \
+	  "$(BENCH_AN) --prompt $(PROMPT) judge --model $(BENCH_MODEL) $(if $(DRY_RUN),--dry-run)"
+
+benchmark-score: ## Phase 5b: metrics.json, CSVs and charts in benchmark/results/report (no API)
+	$(BENCH) "$(BENCH_AN) --prompt $(PROMPT) score"
+
+benchmark-human-sample: ## Phase 5b: blind 15-diagnosis fix-quality sheet for a human
+	$(BENCH) "$(BENCH_AN) --prompt $(PROMPT) human-sample"
+
+benchmark-agreement: ## Phase 5b: judge vs. human agreement (after scores.csv is filled in)
+	$(BENCH) "$(BENCH_AN) agreement"
 
 benchmark-status: ## Scenario and result counts (no labels)
 	$(BENCH) "$(BENCH_PY) status"

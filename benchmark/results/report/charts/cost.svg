@@ -1,0 +1,130 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='760' height='252' viewBox='0 0 760 252' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='12' role='img'>
+<title>Cost per diagnosis</title>
+<rect width='760' height='252' rx='8' fill='#fcfcfb'/>
+<text x='16.0' y='26.0' text-anchor='start' fill='#0b0b0b' font-size='15' font-weight='600'>Cost per diagnosis</text>
+<rect x='110.0' y='41.0' width='10' height='10' rx='2' fill='#2a78d6'/>
+<text x='125.0' y='50.0' text-anchor='start' fill='#0b0b0b' font-size='12' font-weight='400'>Haiku 5.5</text>
+<rect x='200.8' y='41.0' width='10' height='10' rx='2' fill='#eb6834'/>
+<text x='215.8' y='50.0' text-anchor='start' fill='#0b0b0b' font-size='12' font-weight='400'>Sonnet 5.5</text>
+<line x1='110.0' x2='110.0' y1='70' y2='198' stroke='#e4e3df'/>
+<text x='110.0' y='214.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>$0.000</text>
+<line x1='248.2' x2='248.2' y1='70' y2='198' stroke='#e4e3df'/>
+<text x='248.2' y='214.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>$0.010</text>
+<line x1='386.4' x2='386.4' y1='70' y2='198' stroke='#e4e3df'/>
+<text x='386.4' y='214.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>$0.020</text>
+<line x1='524.6' x2='524.6' y1='70' y2='198' stroke='#e4e3df'/>
+<text x='524.6' y='214.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>$0.030</text>
+<line x1='662.8' x2='662.8' y1='70' y2='198' stroke='#e4e3df'/>
+<text x='662.8' y='214.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>$0.040</text>
+<text x='100.0' y='106.0' text-anchor='end' fill='#0b0b0b' font-size='12' font-weight='400'>Haiku 5.5</text>
+<circle cx='131.4' cy='97.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='132.2' cy='92.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='133.1' cy='106.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='133.4' cy='90.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='134.5' cy='103.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='134.8' cy='98.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='135.1' cy='89.6' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='135.1' cy='102.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='135.3' cy='89.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='136.5' cy='100.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='136.5' cy='90.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='136.6' cy='90.5' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='136.9' cy='99.9' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='137.0' cy='111.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='137.2' cy='91.5' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='137.3' cy='94.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='138.7' cy='105.6' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='139.4' cy='114.5' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='140.1' cy='104.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='140.4' cy='99.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='140.6' cy='115.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='140.6' cy='89.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='141.9' cy='112.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='142.0' cy='96.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='142.9' cy='92.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='143.2' cy='91.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='143.3' cy='96.6' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='143.3' cy='110.9' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='143.3' cy='93.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='143.5' cy='104.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='143.8' cy='105.9' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='144.1' cy='98.4' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='144.2' cy='103.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='144.3' cy='89.8' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='144.5' cy='89.7' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='144.5' cy='93.8' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='144.6' cy='107.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='144.6' cy='100.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.1' cy='96.8' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.2' cy='104.4' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.3' cy='100.7' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.3' cy='96.4' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.4' cy='110.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.7' cy='107.6' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.7' cy='94.8' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.7' cy='104.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='145.7' cy='102.7' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='146.0' cy='112.5' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='146.3' cy='108.4' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='146.4' cy='96.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='146.5' cy='115.4' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='146.6' cy='91.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='147.1' cy='99.7' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='147.2' cy='109.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='147.3' cy='92.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='147.4' cy='101.7' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='147.5' cy='89.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='147.7' cy='106.7' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='147.8' cy='109.4' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='147.9' cy='104.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='148.5' cy='112.5' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='148.7' cy='96.8' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='149.4' cy='107.5' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='149.6' cy='104.6' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='150.5' cy='104.2' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='150.5' cy='100.8' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='150.8' cy='111.5' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='151.0' cy='114.5' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='151.0' cy='101.3' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='151.2' cy='106.6' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='151.6' cy='89.7' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='151.7' cy='107.6' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='152.5' cy='106.1' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='153.0' cy='115.8' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='154.2' cy='111.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='155.5' cy='96.0' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='164.3' cy='98.8' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='164.5' cy='106.7' r='4' fill='#2a78d6' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<line x1='145.1' x2='145.1' y1='80.0' y2='124.0' stroke='#0b0b0b' stroke-width='2'/>
+<text x='150.1' y='86.0' text-anchor='start' fill='#0b0b0b' font-size='11' font-weight='400'>median $0.003</text>
+<text x='100.0' y='170.0' text-anchor='end' fill='#0b0b0b' font-size='12' font-weight='400'>Sonnet 5.5</text>
+<circle cx='420.3' cy='152.6' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='425.4' cy='164.9' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='440.9' cy='156.7' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='444.6' cy='155.3' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='472.3' cy='153.7' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='474.6' cy='173.5' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='479.9' cy='155.6' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='484.3' cy='158.9' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='485.9' cy='162.9' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='493.8' cy='176.4' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='505.2' cy='154.3' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='520.2' cy='164.6' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='532.4' cy='167.4' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='532.8' cy='176.7' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='549.4' cy='174.9' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='556.4' cy='176.2' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='569.7' cy='159.8' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='579.2' cy='163.6' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='586.1' cy='162.0' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='601.5' cy='176.8' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='612.9' cy='178.8' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='645.0' cy='156.2' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='649.7' cy='156.9' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='650.0' cy='158.5' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='661.8' cy='158.5' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<circle cx='684.1' cy='165.6' r='4' fill='#eb6834' fill-opacity='0.75' stroke='#fcfcfb' stroke-width='1'/>
+<line x1='532.6' x2='532.6' y1='144.0' y2='188.0' stroke='#0b0b0b' stroke-width='2'/>
+<text x='537.6' y='150.0' text-anchor='start' fill='#0b0b0b' font-size='11' font-weight='400'>median $0.031</text>
+<text x='110.0' y='240.0' text-anchor='start' fill='#52514e' font-size='11' font-weight='400'>One dot per diagnosis (USD). Black tick: median.</text>
+</svg>

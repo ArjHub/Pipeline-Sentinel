@@ -1,0 +1,62 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='760' height='360' viewBox='0 0 760 360' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='12' role='img'>
+<title>Diagnosis accuracy by category</title>
+<rect width='760' height='360' rx='8' fill='#fcfcfb'/>
+<text x='16.0' y='26.0' text-anchor='start' fill='#0b0b0b' font-size='15' font-weight='600'>Diagnosis accuracy by category</text>
+<rect x='48.0' y='41.0' width='10' height='10' rx='2' fill='#2a78d6'/>
+<text x='63.0' y='50.0' text-anchor='start' fill='#0b0b0b' font-size='12' font-weight='400'>Haiku 5.5</text>
+<rect x='138.8' y='41.0' width='10' height='10' rx='2' fill='#eb6834'/>
+<text x='153.8' y='50.0' text-anchor='start' fill='#0b0b0b' font-size='12' font-weight='400'>Sonnet 5.5</text>
+<line x1='48' x2='740' y1='290.0' y2='290.0' stroke='#e4e3df'/>
+<text x='42.0' y='294.0' text-anchor='end' fill='#52514e' font-size='12' font-weight='400'>0%</text>
+<line x1='48' x2='740' y1='233.5' y2='233.5' stroke='#e4e3df'/>
+<text x='42.0' y='237.5' text-anchor='end' fill='#52514e' font-size='12' font-weight='400'>25%</text>
+<line x1='48' x2='740' y1='177.0' y2='177.0' stroke='#e4e3df'/>
+<text x='42.0' y='181.0' text-anchor='end' fill='#52514e' font-size='12' font-weight='400'>50%</text>
+<line x1='48' x2='740' y1='120.5' y2='120.5' stroke='#e4e3df'/>
+<text x='42.0' y='124.5' text-anchor='end' fill='#52514e' font-size='12' font-weight='400'>75%</text>
+<line x1='48' x2='740' y1='64.0' y2='64.0' stroke='#e4e3df'/>
+<text x='42.0' y='68.0' text-anchor='end' fill='#52514e' font-size='12' font-weight='400'>100%</text>
+<path d='M70.4,290.0 V86.8 Q70.4,82.8 74.4,82.8 H92.4 Q96.4,82.8 96.4,86.8 V290.0 Z' fill='#2a78d6'/>
+<text x='83.4' y='78.8' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>11/12</text>
+<path d='M98.4,290.0 V68.0 Q98.4,64.0 102.4,64.0 H120.4 Q124.4,64.0 124.4,68.0 V290.0 Z' fill='#eb6834'/>
+<text x='111.4' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>4/4</text>
+<text x='97.4' y='308.0' text-anchor='middle' fill='#0b0b0b' font-size='12' font-weight='400'>bad deploy</text>
+<text x='97.4' y='323.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>4 fault(s)</text>
+<path d='M169.3,290.0 V68.0 Q169.3,64.0 173.3,64.0 H191.3 Q195.3,64.0 195.3,68.0 V290.0 Z' fill='#2a78d6'/>
+<text x='182.3' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>15/15</text>
+<path d='M197.3,290.0 V68.0 Q197.3,64.0 201.3,64.0 H219.3 Q223.3,64.0 223.3,68.0 V290.0 Z' fill='#eb6834'/>
+<text x='210.3' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>5/5</text>
+<text x='196.3' y='308.0' text-anchor='middle' fill='#0b0b0b' font-size='12' font-weight='400'>data quality</text>
+<text x='196.3' y='323.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>5 fault(s)</text>
+<path d='M268.1,290.0 V68.0 Q268.1,64.0 272.1,64.0 H290.1 Q294.1,64.0 294.1,68.0 V290.0 Z' fill='#2a78d6'/>
+<text x='281.1' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>9/9</text>
+<path d='M296.1,290.0 V68.0 Q296.1,64.0 300.1,64.0 H318.1 Q322.1,64.0 322.1,68.0 V290.0 Z' fill='#eb6834'/>
+<text x='309.1' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>3/3</text>
+<text x='295.1' y='308.0' text-anchor='middle' fill='#0b0b0b' font-size='12' font-weight='400'>late data</text>
+<text x='295.1' y='323.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>3 fault(s)</text>
+
+<text x='380.0' y='286.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>0/9</text>
+
+<text x='408.0' y='286.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>0/3</text>
+<text x='394.0' y='308.0' text-anchor='middle' fill='#0b0b0b' font-size='12' font-weight='400'>oom</text>
+<text x='394.0' y='323.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>3 fault(s)</text>
+<path d='M465.9,290.0 V68.0 Q465.9,64.0 469.9,64.0 H487.9 Q491.9,64.0 491.9,68.0 V290.0 Z' fill='#2a78d6'/>
+<text x='478.9' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>15/15</text>
+<path d='M493.9,290.0 V68.0 Q493.9,64.0 497.9,64.0 H515.9 Q519.9,64.0 519.9,68.0 V290.0 Z' fill='#eb6834'/>
+<text x='506.9' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>5/5</text>
+<text x='492.9' y='308.0' text-anchor='middle' fill='#0b0b0b' font-size='12' font-weight='400'>schema drift</text>
+<text x='492.9' y='323.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>5 fault(s)</text>
+<path d='M564.7,290.0 V68.0 Q564.7,64.0 568.7,64.0 H586.7 Q590.7,64.0 590.7,68.0 V290.0 Z' fill='#2a78d6'/>
+<text x='577.7' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>6/6</text>
+<path d='M592.7,290.0 V68.0 Q592.7,64.0 596.7,64.0 H614.7 Q618.7,64.0 618.7,68.0 V290.0 Z' fill='#eb6834'/>
+<text x='605.7' y='60.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>2/2</text>
+<text x='591.7' y='308.0' text-anchor='middle' fill='#0b0b0b' font-size='12' font-weight='400'>unknown</text>
+<text x='591.7' y='323.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>2 fault(s)</text>
+<path d='M663.6,290.0 V168.4 Q663.6,164.4 667.6,164.4 H685.6 Q689.6,164.4 689.6,168.4 V290.0 Z' fill='#2a78d6'/>
+<text x='676.6' y='160.4' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>5/9</text>
+<path d='M691.6,290.0 V143.3 Q691.6,139.3 695.6,139.3 H713.6 Q717.6,139.3 717.6,143.3 V290.0 Z' fill='#eb6834'/>
+<text x='704.6' y='135.3' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>2/3</text>
+<text x='690.6' y='308.0' text-anchor='middle' fill='#0b0b0b' font-size='12' font-weight='400'>upstream outage</text>
+<text x='690.6' y='323.0' text-anchor='middle' fill='#52514e' font-size='10' font-weight='400'>3 fault(s)</text>
+<text x='48.0' y='348.0' text-anchor='start' fill='#52514e' font-size='11' font-weight='400'>Top-1 category accuracy on detected faults, by true category; labels are correct/diagnoses (all repeats).</text>
+</svg>

@@ -1,0 +1,8 @@
+truth,schema_drift,late_data,bad_deploy,upstream_outage,data_quality,unknown
+bad_deploy,0,0,11,0,1,0
+data_quality,0,0,0,0,15,0
+late_data,0,9,0,0,0,0
+oom,0,0,0,0,0,9
+schema_drift,15,0,0,0,0,0
+unknown,0,0,0,0,0,6
+upstream_outage,0,3,0,5,0,1

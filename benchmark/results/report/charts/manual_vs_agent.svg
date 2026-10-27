@@ -1,0 +1,81 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='780' height='430' viewBox='0 0 780 430' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='12' role='img'>
+<title>Time to a diagnosis: manual vs. PipelineSentinel</title>
+<rect width='780' height='430' rx='8' fill='#fcfcfb'/>
+<text x='16.0' y='26.0' text-anchor='start' fill='#0b0b0b' font-size='15' font-weight='600'>Time to a diagnosis: manual vs. PipelineSentinel</text>
+<rect x='190.0' y='41.0' width='10' height='10' rx='2' fill='#1baf7a'/>
+<text x='205.0' y='50.0' text-anchor='start' fill='#0b0b0b' font-size='12' font-weight='400'>Manual (you)</text>
+<rect x='302.4' y='41.0' width='10' height='10' rx='2' fill='#2a78d6'/>
+<text x='317.4' y='50.0' text-anchor='start' fill='#0b0b0b' font-size='12' font-weight='400'>Haiku 5.5</text>
+<rect x='393.2' y='41.0' width='10' height='10' rx='2' fill='#eb6834'/>
+<text x='408.2' y='50.0' text-anchor='start' fill='#0b0b0b' font-size='12' font-weight='400'>Sonnet 5.5</text>
+<line x1='190.0' x2='190.0' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='190.0' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>0m</text>
+<line x1='253.2' x2='253.2' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='253.2' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>1m</text>
+<line x1='316.4' x2='316.4' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='316.4' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>2m</text>
+<line x1='379.6' x2='379.6' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='379.6' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>3m</text>
+<line x1='442.9' x2='442.9' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='442.9' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>4m</text>
+<line x1='506.1' x2='506.1' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='506.1' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>5m</text>
+<line x1='569.3' x2='569.3' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='569.3' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>6m</text>
+<line x1='632.5' x2='632.5' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='632.5' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>7m</text>
+<line x1='695.7' x2='695.7' y1='64' y2='370' stroke='#e4e3df'/>
+<text x='695.7' y='386.0' text-anchor='middle' fill='#52514e' font-size='12' font-weight='400'>8m</text>
+<text x='180.0' y='89.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 1 schema drift ✓</text>
+<line x1='239.9' x2='374.1' y1='85.0' y2='85.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='374.1' cy='85.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='243.6' cy='85.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='239.9' cy='85.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='119.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 2 oom ✗</text>
+<line x1='241.8' x2='723.3' y1='115.0' y2='115.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='723.3' cy='115.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='242.2' cy='115.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='241.8' cy='115.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='149.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 3 bad deploy ✗</text>
+<line x1='260.6' x2='407.3' y1='145.0' y2='145.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='407.3' cy='145.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='268.0' cy='145.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='260.6' cy='145.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='179.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 4 upstream outage ✓</text>
+<line x1='247.5' x2='444.3' y1='175.0' y2='175.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='444.3' cy='175.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='254.3' cy='175.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='247.5' cy='175.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='209.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 5 unknown ✓</text>
+<line x1='248.5' x2='374.7' y1='205.0' y2='205.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='374.7' cy='205.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='250.2' cy='205.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='248.5' cy='205.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='239.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 6 data quality ✓</text>
+<line x1='239.2' x2='291.4' y1='235.0' y2='235.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='291.4' cy='235.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='240.9' cy='235.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='239.2' cy='235.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='269.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 7 bad deploy ✗</text>
+<line x1='242.7' x2='282.9' y1='265.0' y2='265.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='282.9' cy='265.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='247.8' cy='265.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='242.7' cy='265.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='299.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 8 data quality ✓</text>
+<line x1='231.5' x2='248.8' y1='295.0' y2='295.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='248.8' cy='295.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='239.4' cy='295.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='231.5' cy='295.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='329.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 9 late data ✓</text>
+<line x1='238.5' x2='609.8' y1='325.0' y2='325.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='609.8' cy='325.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='242.2' cy='325.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='238.5' cy='325.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='180.0' y='359.0' text-anchor='end' fill='#0b0b0b' font-size='11' font-weight='400'>trial 10 upstream outage ✗</text>
+<line x1='255.0' x2='262.1' y1='355.0' y2='355.0' stroke='#e4e3df' stroke-width='2'/>
+<circle cx='262.1' cy='355.0' r='5' fill='#1baf7a' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='258.0' cy='355.0' r='5' fill='#2a78d6' stroke='#fcfcfb' stroke-width='2'/>
+<circle cx='255.0' cy='355.0' r='5' fill='#eb6834' stroke='#fcfcfb' stroke-width='2'/>
+<text x='190.0' y='404.0' text-anchor='start' fill='#52514e' font-size='11' font-weight='400'>Manual: alert shown -&gt; diagnosis typed (✓/✗ = your category right/wrong). Agent: first evidence event -&gt;</text>
+<text x='190.0' y='419.0' text-anchor='start' fill='#52514e' font-size='11' font-weight='400'>incident (60 s detector poll, replayed) + diagnosis latency (median of repeats).</text>
+</svg>

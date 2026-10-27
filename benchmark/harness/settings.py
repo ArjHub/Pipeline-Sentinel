@@ -37,6 +37,7 @@ class Settings:
     high_multiple: float
     judge_model: str
     judge_prompt: Path
+    judge_fix_prompt: Path
     judge_max_tokens: int
     judge_estimate_usd: float
     trial_seed: int
@@ -75,6 +76,7 @@ def load(path: Path | None = None) -> Settings:
         high_multiple=float(e["high_multiple"]),
         judge_model=os.environ.get("SENTINEL_JUDGE_MODEL") or j["model"],
         judge_prompt=ROOT / j["prompt_file"],
+        judge_fix_prompt=ROOT / j["fix_prompt_file"],
         judge_max_tokens=int(j["max_tokens"]),
         judge_estimate_usd=float(j["estimate_usd"]),
         trial_seed=int(m["seed"]),

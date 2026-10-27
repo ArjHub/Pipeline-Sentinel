@@ -1,0 +1,11 @@
+trial,fault_id,truth,human_category,human_correct,human_seconds,human_retry_safe,detection_s_from_first_evidence,haiku_diagnosis_s_median,haiku_detect_plus_diagnose_s,haiku_correct,sonnet_diagnosis_s_median,sonnet_detect_plus_diagnose_s,sonnet_correct
+1,F-Q4SPFW,schema_drift,schema_drift,True,174.7,False,40.4,10.5,50.9,3/3,7.0,47.4,1/1
+2,F-ZR22VD,oom,unknown,False,506.2,,37.7,11.8,49.5,0/3,11.5,49.2,0/1
+3,F-H6376M,bad_deploy,data_quality,False,206.2,,59.2,14.8,74.0,3/3,7.8,67.0,1/1
+4,F-7YQ53N,upstream_outage,upstream_outage,True,241.4,True,47.0,14.0,61.0,3/3,7.6,54.6,1/1
+5,F-H3FBP3,unknown,unknown,True,175.3,,46.5,10.6,57.1,3/3,9.0,55.5,1/1
+6,F-J8PS66,data_quality,data_quality,True,96.2,,36.7,11.6,48.3,3/3,10.0,46.7,1/1
+7,F-275N39,bad_deploy,schema_drift,False,88.2,False,39.9,15.0,54.9,3/3,10.1,50.0,1/1
+8,F-8EHKFX,data_quality,data_quality,True,55.8,,31.9,15.0,46.9,3/3,7.5,39.4,1/1
+9,F-P8RWFW,late_data,late_data,True,398.4,,36.7,12.8,49.5,3/3,9.3,46.0,1/1
+10,F-ED2JNB,upstream_outage,unknown,False,68.4,,49.4,15.1,64.5,0/3,12.3,61.7,0/1
